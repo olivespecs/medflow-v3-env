@@ -7,9 +7,6 @@ __pycache__/
 .pytest_cache/
 .hypothesis/
 
-# uv lockfile (Docker and CI use requirements.txt)
-uv.lock
-
 # Virtual environment
 .venv/
 venv/
@@ -30,6 +27,9 @@ test_results.txt
 test_output.txt
 validation*.txt
 _local_precheck.py
+
+tmp_ci_logs/
+.ci-repro*/
 
 # OS
 .DS_Store
