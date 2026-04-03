@@ -47,7 +47,7 @@ Every healthcare AI team must clean, de-identify, and extract structured knowled
 This is NOT a toy environment. It models a genuine clinical data engineering workflow with realistic EHR structures, realistic PHI patterns, and adversarial privacy attacks. An agent that masters all 5 tasks would have direct value in healthcare AI automation.
 
 
-```
+```mermaid
 graph LR
   CLIENT["🤖 Agent / Client"] -->|POST /reset| ENV["🏥 Medical OpenEnv\n(FastAPI + step/reset/state)"]
   ENV -->|observation JSON\n6 synthetic EHRs| CLIENT
