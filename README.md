@@ -504,16 +504,23 @@ python baseline.py --all --seed 42
 
 # Run the LLM inference script:
 python inference.py --all --seed 42
+
+# Evaluator output contract:
+#   stdout -> [START], [STEP], [END] JSON lines only
+#   stderr -> optional diagnostics (set INFERENCE_VERBOSE=1)
 ```
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `API_BASE_URL` | For inference | LLM API endpoint (e.g. `https://router.huggingface.co/v1`) |
-| `MODEL_NAME` | For inference | Model ID (e.g. `meta-llama/Llama-3.3-70B-Instruct`) |
-| `HF_TOKEN` | For inference | HuggingFace API token |
-| `OPENAI_API_KEY` | For UI GPT-4o mode | Enables LLM agent in Gradio UI (falls back to Hybrid if unset) |
+| `API_BASE_URL` | Optional for inference | LLM API endpoint (default `https://router.huggingface.co/v1`) |
+| `MODEL_NAME` | Optional for inference | Model ID (default `meta-llama/Llama-3.3-70B-Instruct`) |
+| `HF_TOKEN` | Required for inference | HuggingFace API token (no default) |
+| `API_KEY` | Optional alias for inference | Token alias used by `inference.py` when `HF_TOKEN` is unset |
+| `OPENAI_API_KEY` | For UI GPT-4o mode | Enables LLM agent in Gradio UI; also accepted as token alias by `inference.py` |
+| `LOCAL_IMAGE_NAME` | Optional | Use only if running wrappers that call `from_docker_image(...)` |
+| `INFERENCE_VERBOSE` | Optional | `1` enables diagnostic stderr logs in `inference.py` (stdout remains START/STEP/END) |
 | `OPENENV_API_KEY` | Optional | If set, protected API routes require `X-API-Key` or `Authorization: Bearer ...` |
 | `OPENENV_REQUIRE_API_KEY` | Optional | `1` = strict mode (missing key becomes config error), `0` = key optional when unset |
 | `GRADIO_ENABLE_QUEUE` | Optional | `0` (default) = direct callback execution; `1` = enable Gradio queue |

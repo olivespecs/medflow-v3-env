@@ -2,13 +2,16 @@
 Hackathon inference runner (required filename: inference.py).
 
 MANDATORY
-- Before submitting, ensure the following variables are defined in your environment configuration:
-    API_BASE_URL   The API endpoint for the LLM.
-    MODEL_NAME     The model identifier to use for inference.
-    HF_TOKEN       Your Hugging Face / API key.
+- Before submitting, ensure token auth is configured for LLM mode:
+    HF_TOKEN       Your Hugging Face / API key (required; no default).
+
+- Optional overrides:
+    API_BASE_URL   The API endpoint for the LLM (default: HF router URL).
+    MODEL_NAME     The model identifier to use for inference (default: Llama-3.3-70B-Instruct).
      
 - The inference script must be named `inference.py` and placed in the root directory of the project 
 - Participants must use OpenAI Client for all LLM calls using above variables 
+- Stdout must emit structured evaluator logs only: [START], [STEP], [END]
 """
 
 from __future__ import annotations
@@ -26,8 +29,19 @@ if TYPE_CHECKING:
 
 # Standard defaults from hackathon instructions
 DEFAULT_API_BASE_URL = "https://router.huggingface.co/v1"
+DEFAULT_MODEL_NAME = "meta-llama/Llama-3.3-70B-Instruct"
 DEFAULT_ENV_BASE_URL = "http://localhost:7860"
 SUPPORTED_TASK_IDS = [1, 2, 3, 4, 5]
+VERBOSE_STDERR_LOGS = os.getenv("INFERENCE_VERBOSE", "0") == "1"
+
+# Optional - if you use from_docker_image()
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+
+
+def _stderr_log(level: str, message: str) -> None:
+    """Emit optional diagnostics to stderr; keep silent by default for strict evaluators."""
+    if VERBOSE_STDERR_LOGS:
+        print(f"[{level}] {message}", file=sys.stderr, flush=True)
 
 
 def _emit(tag: str, payload: dict[str, Any]) -> None:
@@ -162,12 +176,11 @@ def _build_client() -> tuple[Any, str]:
     OpenAI, _ = _import_openai()
 
     api_base_url = os.getenv("API_BASE_URL", DEFAULT_API_BASE_URL)
-    model_name = os.getenv("MODEL_NAME")
+    model_name = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
     # Supports both HF_TOKEN and API_KEY/OPENAI_API_KEY as per instructions
     hf_token = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
 
     missing = []
-    if not model_name: missing.append("MODEL_NAME")
     if not hf_token: missing.append("HF_TOKEN or API_KEY/OPENAI_API_KEY")
 
     if missing:
@@ -227,7 +240,7 @@ def _create_chat_completion(
         if not _is_response_format_unsupported(api_err):
             raise
 
-        print(f"[WARN] Model {model_name} rejected JSON mode, retrying without response_format")
+        _stderr_log("WARN", f"Model {model_name} rejected JSON mode, retrying without response_format")
         return client.chat.completions.create(
             model=model_name,
             messages=messages,
@@ -322,7 +335,7 @@ def _llm_process_task(
                 if attempt == 2:
                     return [], ""
 
-                print(f"[WARN] Task {task_id} empty model output (attempt {attempt}); retrying once")
+                _stderr_log("WARN", f"Task {task_id} empty model output (attempt {attempt}); retrying once")
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {
@@ -345,9 +358,12 @@ def _llm_process_task(
             if attempt == 2:
                 return [], content
 
-            print(
-                f"[WARN] Task {task_id} wrong JSON shape/count (attempt {attempt}): "
-                f"expected {expected_items}, got {len(payload)}; retrying once"
+            _stderr_log(
+                "WARN",
+                (
+                    f"Task {task_id} wrong JSON shape/count (attempt {attempt}): "
+                    f"expected {expected_items}, got {len(payload)}; retrying once"
+                ),
             )
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -362,7 +378,7 @@ def _llm_process_task(
 
         return [], ""
     except Exception as e:
-        print(f"[WARN] LLM inference failed for task {task_id}: {e}")
+        _stderr_log("WARN", f"LLM inference failed for task {task_id}: {e}")
         return [], ""
 
 
@@ -403,10 +419,13 @@ def _run_task_via_api(
         # 3a. Harden: reject wrong-length payloads before sending to grader.
         if processed_payload and len(processed_payload) != expected_items:
             redacted_len = len(raw_content or "")
-            print(f"\n[ERROR] Task {task_id} LLM output had wrong item count.")
-            print(
-                f"[INFO] Expected {expected_items}, got {len(processed_payload)}. "
-                f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content."
+            _stderr_log("ERROR", f"Task {task_id} LLM output had wrong item count.")
+            _stderr_log(
+                "INFO",
+                (
+                    f"Expected {expected_items}, got {len(processed_payload)}. "
+                    f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content."
+                ),
             )
             return {
                 "task_id": task_id,
@@ -421,8 +440,8 @@ def _run_task_via_api(
         # 3b. Harden: Handle empty or malformed payloads before posting
         if not processed_payload:
             redacted_len = len(raw_content or "")
-            print(f"\n[ERROR] Task {task_id} LLM output was empty or malformed.")
-            print(f"[INFO] Raw model output suppressed (len={redacted_len} chars) to avoid leaking content.")
+            _stderr_log("ERROR", f"Task {task_id} LLM output was empty or malformed.")
+            _stderr_log("INFO", f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content.")
             return {
                 "task_id": task_id,
                 "score": 0.0,
@@ -492,19 +511,19 @@ def main() -> None:
     if args.all or not task_ids:
         task_ids = SUPPORTED_TASK_IDS.copy()
 
-    # Check if LLM environment variables are set
-    has_llm = bool(os.getenv("MODEL_NAME") and (os.getenv("HF_TOKEN") or os.getenv("API_KEY")))
+    # Check if LLM token variables are set. MODEL_NAME has a default.
+    has_llm = bool(os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY"))
     
     # Auto-select mode: demo if no LLM vars, LLM inference if vars are present
     mode = "demo" if (args.demo or not has_llm) else "llm"
-    model_for_logs = os.getenv("MODEL_NAME", "hybrid-baseline") if mode == "llm" else "hybrid-baseline"
+    model_for_logs = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME) if mode == "llm" else "hybrid-baseline"
     log_start(task_ids, mode, model_for_logs, args.env_base_url.rstrip("/"), int(args.seed))
 
     if args.demo or not has_llm:
         if not args.demo:
-            print("[INFO] No LLM env vars found — running local deterministic baseline")
+            _stderr_log("INFO", "No LLM env vars found - running local deterministic baseline")
         else:
-            print(f"[INFO] Running local demo for tasks: {task_ids}")
+            _stderr_log("INFO", f"Running local demo for tasks: {task_ids}")
         results = _run_demo_local(task_ids=task_ids, seed=args.seed)
         for r in results:
             log_step(
@@ -516,7 +535,7 @@ def main() -> None:
             )
     else:
         client, model_name = _build_client()
-        print(f"[INFO] Running LLM inference ({model_name}) for tasks: {task_ids}")
+        _stderr_log("INFO", f"Running LLM inference ({model_name}) for tasks: {task_ids}")
         results: list[dict[str, Any]] = []
         for task_id in task_ids:
             result = _run_task_via_api(
@@ -535,12 +554,12 @@ def main() -> None:
                 error=result.get("error"),
             )
 
-    print("\n" + "="*50)
-    print(json.dumps({"results": results}, indent=2))
+    _stderr_log("INFO", "=" * 50)
+    _stderr_log("INFO", json.dumps({"results": results}, indent=2))
     avg = sum(r["score"] for r in results) / max(len(results), 1)
     log_end(success=all(bool(r.get("passed", False)) for r in results), tasks=task_ids, average_score=avg, results=results)
-    print(f"\nAverage score: {avg:.4f}")
-    print("="*50)
+    _stderr_log("INFO", f"Average score: {avg:.4f}")
+    _stderr_log("INFO", "=" * 50)
 
 
 if __name__ == "__main__":
