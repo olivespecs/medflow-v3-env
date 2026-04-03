@@ -96,6 +96,44 @@ def task4_episode_id(client: TestClient) -> str:
 class TestEndpointIntegration:
     """Test basic endpoint functionality and response schemas."""
 
+    def test_post_mcp_tools_list_returns_jsonrpc(self, client: TestClient):
+        """POST /mcp supports tools/list JSON-RPC compatibility for validators."""
+        response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {},
+            },
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert "result" in payload
+        assert "tools" in payload["result"]
+        assert len(payload["result"]["tools"]) >= 1
+
+    def test_post_mcp_unknown_method_returns_jsonrpc_error(self, client: TestClient):
+        """POST /mcp unknown methods return JSON-RPC method-not-found errors."""
+        response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 99,
+                "method": "unknown/method",
+                "params": {},
+            },
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 99
+        assert payload["error"]["code"] == -32601
+
     def test_get_tasks_returns_task_list(self, client: TestClient):
         """GET /tasks returns list of available tasks with correct schema."""
         response = client.get("/tasks")

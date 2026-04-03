@@ -21,6 +21,7 @@ pinned: false
 
 [![OpenEnv RFC 001-003](https://img.shields.io/badge/OpenEnv-RFC_001--003-blue)](https://github.com/openenv/rfc)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/olivespecs/medflow-v3-env/actions/workflows/ci.yml/badge.svg)](https://github.com/olivespecs/medflow-v3-env/actions/workflows/ci.yml)
 
 A high-fidelity healthcare AI training environment for medical record cleaning, PHI redaction, and clinical knowledge extraction. This environment implements the **OpenEnv** standard for RL-compatible medical data processing.
 

@@ -58,6 +58,7 @@ _PUBLIC_PATHS = {
     "/favicon.ico",
     "/manifest.json",
     "/theme.css",
+    "/mcp",
     "/health",
     "/health/detailed",
 }
@@ -800,6 +801,81 @@ _ACTION_SCHEMA = {
     },
 }
 
+_MCP_COMPAT_TOOLS = [
+    {
+        "name": "reset",
+        "description": "Start a new episode in the environment.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "integer"},
+                "seed": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "step",
+        "description": "Submit processed records or knowledge and advance the episode.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {"type": "string"},
+                "records": {"type": "array", "items": {"type": "object"}},
+                "knowledge": {"type": "array", "items": {"type": "object"}},
+                "is_final": {"type": "boolean"},
+            },
+            "required": ["episode_id"],
+        },
+    },
+    {
+        "name": "state",
+        "description": "Get current state and audit trail of an episode.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"episode_id": {"type": "string"}},
+            "required": ["episode_id"],
+        },
+    },
+    {
+        "name": "export",
+        "description": "Export full episode snapshot with reward trend.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"episode_id": {"type": "string"}},
+            "required": ["episode_id"],
+        },
+    },
+    {
+        "name": "tasks",
+        "description": "List available tasks and schemas.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "schema",
+        "description": "Return schema examples for the MCP tool surface.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
+
+def _jsonrpc_result(rpc_id: Any, result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": rpc_id,
+        "result": result,
+    }
+
+
+def _jsonrpc_error(rpc_id: Any, code: int, message: str) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": rpc_id,
+        "error": {
+            "code": code,
+            "message": message,
+        },
+    }
+
 
 def _build_task_catalog() -> list[dict[str, Any]]:
     """Single source of truth for task metadata exposed by API endpoints."""
@@ -879,6 +955,25 @@ def _build_task_catalog() -> list[dict[str, Any]]:
             "action_payload_key": "records",
         },
     ]
+
+
+@app.post("/mcp", tags=["open_env"])
+async def mcp_jsonrpc_compat(payload: dict[str, Any]) -> dict[str, Any]:
+    """Compatibility endpoint for validators expecting JSON-RPC at POST /mcp.
+
+    Full FastMCP transport is mounted under /mcp/* in src.main.
+    """
+    rpc_id = payload.get("id")
+    method = payload.get("method")
+
+    if method == "tools/list":
+        return _jsonrpc_result(rpc_id, {"tools": _MCP_COMPAT_TOOLS})
+
+    return _jsonrpc_error(
+        rpc_id,
+        -32601,
+        "Method not found on /mcp compatibility endpoint; use mounted FastMCP transport under /mcp/*",
+    )
 
 
 # ---------------------------------------------------------------------------
