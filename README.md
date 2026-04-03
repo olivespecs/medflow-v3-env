@@ -508,7 +508,7 @@ python inference.py --all --seed 42
 ### Environment Variables
 
 | Variable | Required | Description |
-|---|---|
+|---|---|---|
 | `API_BASE_URL` | For inference | LLM API endpoint (e.g. `https://router.huggingface.co/v1`) |
 | `MODEL_NAME` | For inference | Model ID (e.g. `meta-llama/Llama-3.3-70B-Instruct`) |
 | `HF_TOKEN` | For inference | HuggingFace API token |
