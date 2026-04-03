@@ -1,0 +1,14 @@
+"""Validator-friendly app export for OpenEnv tooling."""
+
+from src.main import app
+from src.main import main as _main
+
+__all__ = ["app"]
+
+
+def main() -> None:
+    _main()
+
+
+if __name__ == "__main__":
+    main()

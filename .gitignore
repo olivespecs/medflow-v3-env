@@ -1,0 +1,44 @@
+# Python cache / bytecode
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+.pytest_cache/
+.hypothesis/
+
+# uv lockfile (Docker and CI use requirements.txt)
+uv.lock
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE / tools
+.vscode/
+.idea/
+pyrightconfig.json
+.qoder/
+
+# Secrets / env files
+.env
+*.env
+
+# Test output
+test_results.txt
+test_output.txt
+validation*.txt
+_local_precheck.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dev-only helpers (not for submission)
+test_warmup.py
+_legacy_baseline.py
+upload_to_hf.py
+
+# Submission zips
+*.zip

@@ -1,0 +1,189 @@
+metadata:
+  name: medical-records-cleaner
+  version: "3.0.0"
+  description: >
+    A healthcare AI training environment that presents synthetic Electronic Health
+    Records (EHRs) for cleaning, PHI redaction, anonymization, and clinical
+    knowledge extraction. Includes advanced features like OCR noise injection,
+    longitudinal consistency, and detailed audit trails. All records are 100%
+    synthetic. Covers HIPAA/GDPR-relevant data-hygiene and privacy-preservation
+    tasks with dense, continuous reward signals suitable for RL and supervised
+    fine-tuning.
+  tags:
+    - openenv
+    - healthcare
+    - nlp
+    - phi-redaction
+    - data-cleaning
+    - knowledge-extraction
+    - longitudinal-consistency
+    - ocr-correction
+    - rl
+  author: "medical-openenv contributors"
+  license: "MIT"
+
+compute:
+  sdk: docker
+  requirements: requirements.txt
+
+service:
+  endpoints:
+    tasks: "GET /tasks"
+    reset: "POST /reset"
+    step:  "POST /step?episode_id=<id>"
+    state: "GET /state?episode_id=<id>"
+    grader: "GET /grader?episode_id=<id>"
+    export: "GET /export?episode_id=<id>"
+    metrics: "GET /metrics"
+    baseline: "GET /baseline"
+    contract: "GET /contract"
+    health: "GET /health"
+    detailed_health: "GET /health/detailed"
+    mode: "GET /mode"
+    metadata: "GET /metadata"
+    schema: "GET /schema"
+    openapi: "GET /openapi.json"
+    ui: "GET /ui"
+  tasks:
+    - id: 1
+      name: "Data Hygiene & Longitudinal Consistency"
+      description: "Standardise fields, resolve contradictions, and fix OCR noise."
+      difficulty: easy
+      pass_bar: 0.85
+      max_steps: 10
+    - id: 2
+      name: "PHI Detection & Redaction"
+      description: "Remove PHI from notes and fields using deterministic and ML methods."
+      difficulty: medium
+      pass_bar: "phi_score == 1.0 AND utility_score >= 0.8"
+      max_steps: 10
+    - id: 3
+      name: "Anonymization & ML Utility"
+      description: "De-identify data while preserving statistical signal for ML."
+      difficulty: hard
+      pass_bar: "phi_score == 1.0 AND ml_utility_score >= 0.6"
+      max_steps: 10
+    - id: 4
+      name: "Clinical Knowledge Extraction"
+      description: >
+        Extract entities, ICD-10 codes, and generate patient summaries.
+        Submit knowledge objects in the same order as the input records (index-aligned; no record_id on each item).
+      difficulty: hard
+      pass_bar: "avg_entity_extraction >= 0.75 AND avg_summary_fidelity >= 0.50"
+      max_steps: 10
+    - id: 5
+      name: "Contextual PII Disambiguation"
+      description: >
+        Advanced clinical reasoning task: Decide which mentions are patient PII based on context.
+        Example: "Dr. Smith saw Mr. Smith" — only "Mr. Smith" is patient PII, "Dr. Smith" is provider.
+        Requires nuanced understanding of patient vs. provider identifiers and family member references.
+      difficulty: expert
+      pass_bar: "overall_score >= 0.70 AND patient_phi_score >= 0.80"
+      max_steps: 10
+
+
+observation_space:
+  type: object
+  description: >
+    A batch of synthetic patient records together with the task specification,
+    episode metadata, and optional audit trail.
+  properties:
+    task_id:
+      type: integer
+      description: "1 = hygiene, 2 = redaction, 3 = anonymization, 4 = knowledge, 5 = contextual PII"
+    task_description:
+      type: string
+    records:
+      type: array
+      items:
+        type: object
+        description: "PatientRecord or DirtyRecord serialised as JSON"
+    step:
+      type: integer
+      description: "Current step within the episode (0-indexed)"
+    max_steps:
+      type: integer
+    metadata:
+      type: object
+      description: "Supplementary info; ground-truth excluded"
+
+action_space:
+  type: object
+  description: >
+    The agent's corrected / redacted / anonymised version of the records
+    together with an optional is_final flag to close the episode early.
+  properties:
+    records:
+      type: array
+      items:
+        type: object
+        description: "Processed PatientRecord serialised as JSON"
+    knowledge:
+      type: array
+      items:
+        type: object
+        description: "Task 4 knowledge extraction results (entities + summary)"
+    is_final:
+      type: boolean
+      default: false
+      description: "Set true to signal final submission and end the episode"
+
+reward_space:
+  type: object
+  properties:
+    score:
+      type: number
+      minimum: 0.0
+      maximum: 1.0
+    breakdown:
+      type: object
+      description: >
+        Per-component scores (phi_score, utility_score, ml_utility_score, ...).
+        ml_utility_score measures risk-score fidelity (closeness to baseline),
+        not raw risk magnitude.
+    done:
+      type: boolean
+    info:
+      type: object
+      description: "Per-record diagnostics, penalty flags, pass/fail per bar"
+
+state_space:
+  name: State
+  type: object
+  description: >
+    Episode state snapshot returned by the state() method.
+    Contains metadata, scoring history, and audit trail for reproducibility.
+  properties:
+    task_id:
+      type: integer
+      description: "Task identifier (1-5)"
+    seed:
+      type: integer
+      description: "Random seed for episode generation"
+    step:
+      type: integer
+      description: "Current step within episode (0-indexed)"
+    max_steps:
+      type: integer
+      description: "Maximum steps allowed per episode"
+    done:
+      type: boolean
+      description: "Whether episode has ended"
+    last_score:
+      type: number
+      minimum: 0.0
+      maximum: 1.0
+      nullable: true
+      description: "Score from last submitted action"
+    last_breakdown:
+      type: object
+      description: "Per-component breakdown of last score"
+    passed:
+      type: boolean
+      description: "Whether submission meets pass bar"
+    audit_trail:
+      type: array
+      items:
+        type: object
+      description: "History of all submissions with timestamps and scores"
+
