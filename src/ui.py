@@ -32,8 +32,10 @@ from .utils import export_to_fhir
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-_OPENAI_AGENT = "OpenAI / LLM (MODEL_NAME env)"
+_OPENAI_AGENT = "OpenAI / LLM (HF_TOKEN + MODEL_NAME env)"
 _HYBRID_AGENT = "Hybrid (Rules + BERT NER)"
+_DEFAULT_API_BASE_URL = "https://router.huggingface.co/v1"
+_DEFAULT_MODEL_NAME = "meta-llama/Llama-3.3-70B-Instruct"
 
 _TASK_NAMES = {
     1: "Task 1 — Data Hygiene & Standardisation",
@@ -91,13 +93,20 @@ def _run_hybrid(records, task_id: int):
 
 
 def _run_llm(records, task_id: int):
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = (
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+    )
     if not api_key:
-        return None  # caller falls back to hybrid
+        return None, "Missing HF_TOKEN/API_KEY/OPENAI_API_KEY"
+
+    api_base_url = os.environ.get("API_BASE_URL", _DEFAULT_API_BASE_URL)
+    model = os.environ.get("MODEL_NAME", _DEFAULT_MODEL_NAME)
+
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-        model = os.environ.get("MODEL_NAME", "gpt-4o")
+        client = OpenAI(base_url=api_base_url, api_key=api_key)
         system = (
             "You are a medical data engineer. "
             "Return ONLY a valid JSON object with a 'records' key containing a list of processed records "
@@ -114,18 +123,27 @@ def _run_llm(records, task_id: int):
         parsed = json.loads(resp.choices[0].message.content)
         key = "knowledge" if task_id == 4 else "records"
         result = parsed.get(key, list(parsed.values())[0] if parsed else [])
-        return result if isinstance(result, list) else [result]
+        resolved = result if isinstance(result, list) else [result]
+        return resolved, None
     except Exception as e:
         print(f"[UI] LLM call failed: {e}")
-        return None
+        return None, str(e)
 
 
 def _run_agent(agent_type: str, records, task_id: int):
     if agent_type == _OPENAI_AGENT:
-        result = _run_llm(records, task_id)
+        result, error = _run_llm(records, task_id)
         if result is not None:
-            return result
-    return _run_hybrid(records, task_id)
+            return result, _OPENAI_AGENT, None
+
+        # Fall back to deterministic baseline but explicitly report it in UI logs.
+        return (
+            _run_hybrid(records, task_id),
+            _HYBRID_AGENT,
+            f"OpenAI/LLM unavailable ({error}). Fell back to Hybrid agent.",
+        )
+
+    return _run_hybrid(records, task_id), _HYBRID_AGENT, None
 
 
 def _step_env(env: MedicalOpenEnv, task_id: int, processed):
@@ -262,8 +280,12 @@ def run_pipeline(task_id: int, seed: int, agent_type: str):
         records = obs.records
         log_lines.append(f"✅ Episode started — task={task_id}, seed={seed}, records={len(records)}")
 
-        processed = _run_agent(agent_type, records, int(task_id))
-        log_lines.append(f"✅ Agent `{agent_type}` processed {len(processed)} records")
+        processed, effective_agent, fallback_note = _run_agent(agent_type, records, int(task_id))
+        if fallback_note:
+            log_lines.append(f"⚠️ {fallback_note}")
+
+        log_lines.append(f"✅ Agent `{effective_agent}` processed {len(processed)} records")
+        log_lines.append("ℹ️ Tip: change seed to get different records and scores")
 
         _, reward, done, info = _step_env(env, int(task_id), processed)
         log_lines.append(f"✅ Graded — score={reward.score:.4f}, passed={info.get('passed')}, done={done}")

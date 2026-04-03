@@ -514,11 +514,11 @@ python inference.py --all --seed 42
 
 | Variable | Required | Description |
 |---|---|---|
-| `API_BASE_URL` | Optional for inference | LLM API endpoint (default `https://router.huggingface.co/v1`) |
+| `API_BASE_URL` | Optional for inference/UI LLM | LLM API endpoint (default `https://router.huggingface.co/v1`) |
 | `MODEL_NAME` | Optional for inference | Model ID (default `meta-llama/Llama-3.3-70B-Instruct`) |
-| `HF_TOKEN` | Required for inference | HuggingFace API token (no default) |
+| `HF_TOKEN` | Required for inference; optional for UI LLM | HuggingFace API token (no default) |
 | `API_KEY` | Optional alias for inference | Token alias used by `inference.py` when `HF_TOKEN` is unset |
-| `OPENAI_API_KEY` | For UI GPT-4o mode | Enables LLM agent in Gradio UI; also accepted as token alias by `inference.py` |
+| `OPENAI_API_KEY` | Optional alias for UI/inference | Enables LLM agent in Gradio UI; also accepted as token alias by `inference.py` |
 | `LOCAL_IMAGE_NAME` | Optional | Use only if running wrappers that call `from_docker_image(...)` |
 | `INFERENCE_VERBOSE` | Optional | `1` enables diagnostic stderr logs in `inference.py` (stdout remains START/STEP/END) |
 | `OPENENV_API_KEY` | Optional | If set, protected API routes require `X-API-Key` or `Authorization: Bearer ...` |
