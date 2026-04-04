@@ -27,5 +27,4 @@ ENV OPENAI_API_KEY=""
 ENV USE_TRANSFORMERS_NER=1
 
 # Run the app explicitly as src.main:app so Hugging Face Spaces ingress routes it properly
-# Use server/app.py as the entry point for better compatibility
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]

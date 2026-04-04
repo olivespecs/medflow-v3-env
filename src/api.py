@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -767,6 +767,8 @@ class ResetRequest(BaseModel):
     task_id: int = 1
     seed: int = 42
 
+    model_config = {"extra": "ignore"}
+
 
 class StepRequest(BaseModel):
     # Tasks 1-3 use 'records', Task 4 uses 'knowledge'
@@ -997,12 +999,23 @@ def list_tasks() -> dict:
 
 
 @app.post("/reset", status_code=200)
-def reset_episode(req: ResetRequest, request: Request) -> dict:
+def reset_endpoint(req: ResetRequest = Body(default=None), request: Request = None) -> dict:
     """
     Start a new episode.
 
     Returns an `episode_id` (UUID string) along with the first Observation.
     Pass this `episode_id` to all subsequent /step, /state, and /grader calls.
+    """
+    # Handle case where no body is provided (use defaults)
+    if req is None:
+        req = ResetRequest()
+    
+    return reset_episode(req, request)
+
+
+def reset_episode(req: ResetRequest, request: Request) -> dict:
+    """
+    Internal implementation for reset logic.
     """
     # Per-IP rate limiting to prevent DoS
     client_ip = _get_client_ip(request)
