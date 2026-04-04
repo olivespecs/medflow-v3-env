@@ -211,12 +211,19 @@ def _score_contextual_accuracy(
             if not _contains(submitted_text, mention) or _looks_like_redacted(submitted_text, mention):
                 correct_decisions += 1
         else:
-            # Neutral mentions: require consistency — if mention looks like patient family, expect redaction; otherwise expect preservation
+            # Neutral mentions (e.g., just surname "Li", "Smith"): require contextual consistency
+            # Check if this ambiguous surname is part of a provider or patient identifier
+            is_part_of_provider = any(mention.lower() in prov_id.lower() for prov_id in provider_ids)
+            is_part_of_patient = any(mention.lower() in pat_id.lower() for pat_id in patient_ids)
+            
             if _contains(submitted_text, mention):
-                if mention in provider_ids and not _looks_like_redacted(submitted_text, mention):
+                # Mention is present - give credit if it's preserved and associated with provider
+                if is_part_of_provider and not _looks_like_redacted(submitted_text, mention):
                     correct_decisions += 1
             else:
-                if mention in patient_ids or _has_redaction_token(submitted_text):
+                # Mention is absent - give credit only if it's primarily a patient identifier
+                # Don't give credit if it's also part of provider IDs (those should be preserved)
+                if is_part_of_patient and not is_part_of_provider:
                     correct_decisions += 1
     
     return correct_decisions / len(ambiguous_mentions)
