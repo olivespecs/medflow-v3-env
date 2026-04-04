@@ -27,11 +27,6 @@ _ICD10_RE = re.compile(r"^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$")
 # Standard chapters: A-T, V-Z
 VALID_ICD10_FIRST_LETTERS = set("ABCDEFGHIJKLMNOPQRSTVWXYZ")  # excludes U
 
-# A non-exhaustive whitelist of valid top-level chapter prefixes
-VALID_ICD10_PREFIXES = set(
-    list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-)
-
 # Known *invalid* synthetic codes we inject during data generation
 INVALID_ICD10_EXAMPLES = {"Z99.999", "X00.0000", "A99.99X", "B00.0000"}
 
@@ -415,7 +410,7 @@ def export_to_fhir(record: dict, include_phi: bool = False) -> dict:
 
     # Add ICD-10 as conditions
     conditions = []
-    for code in record.get("icd10_codes", []):
+    for code in (record.get("icd10_codes") or []):
         conditions.append({
             "resourceType": "Condition",
             "code": {

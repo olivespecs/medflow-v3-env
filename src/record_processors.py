@@ -110,7 +110,7 @@ def _fix_record_task1(record: dict[str, Any]) -> dict[str, Any]:
     rec["icd10_codes"] = fixed_codes
 
     # 4. Fix vitals (ensure floats and handle units)
-    if rec.get("vitals"):
+    if rec.get("vitals") is not None:
         vitals = rec["vitals"] if isinstance(rec.get("vitals"), dict) else {}
         rec["vitals"] = _normalize_vitals(vitals)
 
@@ -120,9 +120,9 @@ def _fix_record_task1(record: dict[str, Any]) -> dict[str, Any]:
         meds = []
     rec["medications"] = meds
     for med in meds:
-        # Standardize name (Capital Case)
+        # Standardize name (Title Case preserves proper casing like "ACE Inhibitor")
         if med.get("name"):
-            med["name"] = med["name"].strip().capitalize()
+            med["name"] = med["name"].strip().title()
 
         # Fix units in frequency field (Task 1 specific injected flaw)
         freq = med.get("frequency") or ""
@@ -210,9 +210,10 @@ def _redact_record(record: dict[str, Any], ner_agent: NERAgentProtocol | None = 
         )
 
     if first_name and len(first_name) > 2:
-        # First name mentions
+        # First name mentions - avoid redacting when part of a provider title (e.g., "Dr. John")
+        # Only redact standalone first names that are NOT preceded by a title
         notes = re.sub(
-            rf"\b{re.escape(first_name)}\b",
+            rf"\b(?<!Dr\. )(?<!Doctor )(?<!Nurse )(?<!RN )(?<!Prof\. ){re.escape(first_name)}\b",
             "[REDACTED_NAME]",
             notes,
             flags=re.IGNORECASE,
