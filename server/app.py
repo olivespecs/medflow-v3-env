@@ -3,10 +3,11 @@
 from src.main import app
 from src.main import main as _main
 
-__all__ = ["app"]
+__all__ = ["app", "main"]
 
 
 def main() -> None:
+    """Console script entrypoint used by OpenEnv validators."""
     _main()
 
 

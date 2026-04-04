@@ -996,7 +996,7 @@ def list_tasks() -> dict:
     }
 
 
-@app.post("/reset", status_code=201)
+@app.post("/reset", status_code=200)
 def reset_episode(req: ResetRequest, request: Request) -> dict:
     """
     Start a new episode.

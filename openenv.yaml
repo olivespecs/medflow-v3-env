@@ -27,6 +27,7 @@ compute:
   requirements: requirements.txt
 
 service:
+  start: uvicorn server.app:app --host 0.0.0.0 --port 7860
   endpoints:
     tasks: "GET /tasks"
     reset: "POST /reset"
