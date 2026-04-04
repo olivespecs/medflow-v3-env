@@ -1168,6 +1168,13 @@ def _validate_task_records_payload(req: StepRequest, task_id: int) -> None:
         valid, error_msg = _validate_record_structure(record, task_id)
         if not valid:
             raise HTTPException(status_code=422, detail=f"Record {i}: {error_msg}")
+        # Enforce MAX_NOTES_LENGTH for clinical_notes
+        notes = record.get("clinical_notes", "")
+        if isinstance(notes, str) and len(notes) > MAX_NOTES_LENGTH:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Record {i} clinical_notes exceeds {MAX_NOTES_LENGTH} chars ({len(notes)} submitted). Truncate before submitting.",
+            )
 
 
 def _validate_task_knowledge_payload(req: StepRequest, task_id: int) -> None:
@@ -1178,6 +1185,13 @@ def _validate_task_knowledge_payload(req: StepRequest, task_id: int) -> None:
         valid, error_msg = _validate_knowledge_structure(knowledge_obj)
         if not valid:
             raise HTTPException(status_code=422, detail=f"Knowledge object {i}: {error_msg}")
+        # Enforce MAX_NOTES_LENGTH for summary
+        summary = knowledge_obj.get("summary", "")
+        if isinstance(summary, str) and len(summary) > MAX_NOTES_LENGTH:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Knowledge {i} summary exceeds {MAX_NOTES_LENGTH} chars ({len(summary)} submitted). Truncate before submitting.",
+            )
 
 
 _TASK_PAYLOAD_VALIDATORS: dict[int, Callable[[StepRequest, int], None]] = {

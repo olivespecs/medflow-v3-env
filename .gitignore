@@ -44,3 +44,4 @@ upload_to_hf.py
 *.zip
 
 src/medical_openenv.egg-info
+test_deep_bug_hunt.py
