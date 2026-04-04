@@ -28,11 +28,16 @@ python-dotenv>=1.0.0,<2.0.0
 # LLM client
 openai>=1.14.0,<2.0.0
 
-# ML stack — NOT installed in Docker (lazy imports with Jaccard fallback).
-# For local dev / Colab with full semantic scoring: pip install -r requirements-ml.txt
-# or: pip install -e ".[ml]"
+# ML stack (NER, semantic similarity, BERTScore)
+torch>=2.2.0,<3.0.0
+transformers>=4.38.0,<5.0.0
+evaluate>=0.4.0,<1.0.0
+bert-score>=0.3.13,<1.0.0
+sentence-transformers>=2.7.0,<4.0.0
 
-# Development/testing — not needed at runtime; install separately for local dev
-# pytest>=8.0.0,<10.0.0
-# hypothesis>=6.100.0
+# Gymnasium wrapper (RL framework compatibility)
+gymnasium>=0.26.0
 
+# Development / testing
+pytest>=8.0.0,<10.0.0
+hypothesis>=6.100.0

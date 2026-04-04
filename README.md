@@ -284,6 +284,10 @@ Each task is a complete EHR processing challenge with 6 synthetic patient record
 
 Deterministic hybrid rule-based baseline (seed=42, no API key required):
 
+> **Note:** The baseline agent **auto-enables the NER (ML) component** when `transformers` and `torch` are installed. 
+> This produces the scores documented below. If ML dependencies are absent, it falls back to rule-only mode 
+> (lower scores, especially for Tasks 2-5). Install with `pip install -r requirements.txt`.
+
 | Task | Score | Pass Bar | Actual Metrics | Pass? | Notes |
 |---|---|---|---|---|---|
 | **Task 1 — Hygiene** | **0.96** | ≥ 0.85 | per_field_avg: 0.96, longitudinal_consistency: 1.0 | ✅ Pass | Regex + majority vote consensus |
@@ -387,10 +391,9 @@ All episode-scoped endpoints require `?episode_id=<uuid>` from `POST /reset`.
 `gym_env.py` provides a drop-in gymnasium wrapper for use with any RL framework.
 
 ```bash
-# Install the extra dependency (not in requirements.txt — only needed for training)
-pip install gymnasium
+# gymnasium is already included in requirements.txt
 # or, if installed as a package:
-pip install -e ".[gym]"
+pip install -e .
 ```
 
 **HTTP wrapper** — connects to a running server (local or HF Spaces):
@@ -433,9 +436,6 @@ For numeric RL (PPO / DQN on MLPs), subclass the wrapper and override `_encode_o
 ```bash
 docker build -t medical-openenv .
 docker run -p 7860:7860 medical-openenv
-
-# Optional: force CPU-only PyTorch wheels
-docker build --build-arg CPU_ONLY=1 -t medical-openenv:cpu .
 
 # Optional: preload BERTScore artifacts during build (avoids first-call download)
 docker build --build-arg PRELOAD_BERTSCORE=1 -t medical-openenv:bert-preloaded .
@@ -524,12 +524,11 @@ python inference.py --all --seed 42
 | `OPENENV_API_KEY` | Optional | If set, protected API routes require `X-API-Key` or `Authorization: Bearer ...` |
 | `OPENENV_REQUIRE_API_KEY` | Optional | `1` = strict mode (missing key becomes config error), `0` = key optional when unset |
 | `GRADIO_ENABLE_QUEUE` | Optional | `0` (default) = direct callback execution; `1` = enable Gradio queue |
-| `USE_TRANSFORMERS_NER` | Optional | `1` = enable BERT NER model for PHI detection (auto-enabled on GPU) |
+| `USE_TRANSFORMERS_NER` | Optional | Auto-enabled when `transformers` + `torch` are installed. Set `0` to force disable, `1` to force enable. Uses BERT NER model for PHI detection in clinical notes. |
 | `ENABLE_BERT_SCORE` | Optional | `1` = enable BERTScore for Task 4 semantic similarity (auto-enabled on GPU) |
 | `BERTSCORE_METRIC_PATH` | Optional | Metric id/path for `evaluate.load()` (default `bertscore`) |
 | `BERTSCORE_MODEL_TYPE` | Optional | HF model id or local model directory for BERTScore |
 | `BERTSCORE_LOCAL_FILES_ONLY` | Optional | `1` = offline/local-only BERTScore loading (no network fetch) |
-| `CPU_ONLY` | Docker build arg | `1` = use CPU-only PyTorch wheels (smaller image) |
 | `PRELOAD_BERTSCORE` | Docker build arg | `1` = pre-download BERTScore metric/model at image build time |
 | `OPENENV_ENV` | Optional | Runtime environment (`development` default, use `production` for strict startup checks) |
 | `CORS_ORIGINS` | Optional | Comma-separated allowed CORS origins; required in production; wildcard `*` rejected |

@@ -61,14 +61,25 @@ logger = logging.getLogger(__name__)
 
 class LocalNERAgent:
     def __init__(self, model_name: str = MODEL_NAME, safe_mode: bool | None = None):
-        # Keep baseline fast/reproducible on small machines by default.
-        # Set USE_TRANSFORMERS_NER=1 to enable transformer-based NER.
-        # Auto-enable if in a high-resource environment (like Colab with GPU).
+        # Auto-enable NER when ML dependencies are available.
+        # Override with USE_TRANSFORMERS_NER=0 to force disable, or =1 to force enable.
+        # Auto-enable on GPU environments (Colab, etc.) for best accuracy.
         is_colab = "COLAB_GPU" in os.environ or "google.colab" in sys.modules
-        enable_default = "1" if is_colab else "0"
-
         env_safe = os.getenv("BASELINE_SAFE_MODE", "0")
-        self.safe_mode = safe_mode if safe_mode is not None else env_safe.lower() in {"1", "true", "yes"}
+        self.safe_mode = safe_mode if safe_mode is not None else self._is_safe_mode(env_safe)
+
+        # Check if ML dependencies are available by attempting lazy import
+        _ml_available = False
+        if not self.safe_mode:
+            try:
+                import importlib.util
+                _has_transformers = importlib.util.find_spec("transformers") is not None
+                _has_torch = importlib.util.find_spec("torch") is not None
+                _ml_available = _has_transformers and _has_torch
+            except Exception:
+                _ml_available = False
+
+        enable_default = "1" if (is_colab or _ml_available) else "0"
 
         self.nlp = None
         self.device = -1
@@ -97,6 +108,10 @@ class LocalNERAgent:
                 self.disabled_reason = f"transformers load failed: {type(e).__name__}"
                 self.nlp = None
                 logger.warning("LocalNERAgent fallback to rule-only: %s", e)
+
+    def _is_safe_mode(self, env_safe: str) -> bool:
+        """Determine if safe mode should be enabled."""
+        return env_safe.lower() in {"1", "true", "yes"}
 
     def diagnostics(self) -> dict[str, Any]:
         return {
