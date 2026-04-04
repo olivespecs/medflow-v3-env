@@ -24,6 +24,7 @@ EXPOSE 7860
 
 # OPENAI_API_KEY is optional -- /baseline and --demo work without it.
 ENV OPENAI_API_KEY=""
+ENV USE_TRANSFORMERS_NER=1
 
 # Run the app explicitly as src.main:app so Hugging Face Spaces ingress routes it properly
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]

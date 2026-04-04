@@ -159,7 +159,7 @@ Unlike binary pass/fail environments, **every step provides informative reward a
 | Task | Base Reward Formula | Pass Bar |
 |---|---|---|
 | **Task 1** | `per_field_avg × 0.8 + longitudinal_consistency × 0.2` | score ≥ 0.85 |
-| **Task 2** | `phi_score × 0.6 + utility_score × 0.4 − leak_penalties` | phi_score = 1.0 AND utility ≥ 0.80 |
+| **Task 2** | `phi_score × 0.6 + utility_score × 0.4` | phi_score = 1.0 AND utility ≥ 0.80 |
 | **Task 3** | `avg_phi × 0.4 + avg_ml × 0.3 + avg_fidelity × 0.2 + k_score × 0.1` | phi_score = 1.0 AND ml_utility_score ≥ 0.60 |
 | **Task 4** | `entity_extraction × 0.4 + code_precision × 0.3 + summary_fidelity × 0.3` | entity ≥ 0.75 AND summary ≥ 0.50 |
 
@@ -500,7 +500,7 @@ python -m pytest tests/ -v
 python -m pytest tests/test_task2.py -v
 
 # Run the baseline script directly:
-python baseline.py --all --seed 42
+python inference.py --demo --all --seed 42
 
 # Run the LLM inference script:
 python inference.py --all --seed 42
@@ -622,7 +622,6 @@ with httpx.Client() as http:
 ```
 .
 ├── inference.py              # Hackathon LLM inference runner (required file)
-├── baseline.py               # CLI for the hybrid baseline agent
 ├── openenv.yaml              # OpenEnv manifest (RFC 001)
 ├── requirements.txt          # Unified Python dependencies (runtime + test + ML + LLM)
 ├── pyproject.toml            # Package configuration

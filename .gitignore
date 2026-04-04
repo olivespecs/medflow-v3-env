@@ -42,3 +42,5 @@ upload_to_hf.py
 
 # Submission zips
 *.zip
+
+src/medical_openenv.egg-info
