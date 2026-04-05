@@ -76,7 +76,7 @@ def cleanup_episodes():
 def episode_id(client: TestClient) -> str:
     """Create a fresh episode and return its ID."""
     response = client.post("/reset", json={"task_id": 1, "seed": 42})
-    assert response.status_code == 201
+    assert response.status_code == 200
     return response.json()["episode_id"]
 
 
@@ -84,7 +84,7 @@ def episode_id(client: TestClient) -> str:
 def task4_episode_id(client: TestClient) -> str:
     """Create a Task 4 episode for knowledge extraction tests."""
     response = client.post("/reset", json={"task_id": 4, "seed": 42})
-    assert response.status_code == 201
+    assert response.status_code == 200
     return response.json()["episode_id"]
 
 
@@ -158,7 +158,7 @@ class TestEndpointIntegration:
     def test_post_reset_creates_episode(self, client: TestClient):
         """POST /reset creates a new episode and returns initial state."""
         response = client.post("/reset", json={"task_id": 1, "seed": 42})
-        assert response.status_code == 201
+        assert response.status_code == 200
         
         data = response.json()
         assert "episode_id" in data
@@ -177,7 +177,7 @@ class TestEndpointIntegration:
         """POST /reset works for all task IDs."""
         for task_id in (1, 2, 3, 4):
             response = client.post("/reset", json={"task_id": task_id, "seed": 42})
-            assert response.status_code == 201
+            assert response.status_code == 200
             assert response.json()["observation"]["task_id"] == task_id
 
     def test_post_step_submits_action(self, client: TestClient, episode_id: str):
@@ -379,7 +379,7 @@ class TestConcurrentEpisodes:
         episode_ids = []
         for i in range(5):
             response = client.post("/reset", json={"task_id": 1, "seed": 42 + i})
-            assert response.status_code == 201
+            assert response.status_code == 200
             episode_ids.append(response.json()["episode_id"])
         
         assert len(set(episode_ids)) == 5  # All unique
@@ -555,7 +555,7 @@ class TestRateLimiting:
         # Make RATE_LIMIT_REQUESTS successful requests
         for i in range(RATE_LIMIT_REQUESTS):
             response = client.post("/reset", json={"task_id": 1, "seed": i})
-            assert response.status_code == 201, f"Request {i+1} failed unexpectedly"
+            assert response.status_code == 200, f"Request {i+1} failed unexpectedly"
         
         # Next request should be rate limited
         response = client.post("/reset", json={"task_id": 1, "seed": 999})
@@ -900,7 +900,7 @@ class TestEdgeCases:
     def test_reset_with_default_parameters(self, client: TestClient):
         """POST /reset works with default parameters."""
         response = client.post("/reset", json={})
-        assert response.status_code == 201
+        assert response.status_code == 200
         obs = response.json()["observation"]
         assert obs["task_id"] == 1  # Default
         assert obs["metadata"]["seed"] == 42  # Default

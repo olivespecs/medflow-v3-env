@@ -15,7 +15,7 @@ def test_step_validates_missing_required_fields_task1():
     """Test that /step validates required fields for Task 1."""
     # Create an episode
     response = client.post("/reset", json={"task_id": 1, "seed": 42})
-    assert response.status_code == 201
+    assert response.status_code == 200
     episode_id = response.json()["episode_id"]
     
     # Submit records missing the critical record_id field

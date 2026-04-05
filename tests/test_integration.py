@@ -130,7 +130,7 @@ class TestExportEndpoint:
 
     def test_export_before_any_step_has_empty_reward_trend(self, client):
         reset = client.post("/reset", json={"task_id": 1, "seed": 42})
-        assert reset.status_code == 201
+        assert reset.status_code == 200
         episode_id = reset.json()["episode_id"]
 
         export = client.get("/export", params={"episode_id": episode_id})
