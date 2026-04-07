@@ -242,7 +242,7 @@ def grade(
     }
     """
     if not annotated_ground_truth:
-        return {"score": 0.0, "breakdown": {}, "passed": False, "info": {"error": "No ground truth"}}
+        return {"score": 0.0001, "breakdown": {}, "passed": False, "info": {"error": "No ground truth"}}
 
     submitted_records = normalize_record_list(submitted_records)
     ok_len, err = validate_length_or_error(submitted_records, len(annotated_ground_truth), "task3_anonymization")
@@ -339,8 +339,11 @@ def grade(
     # Must have perfect PHI removal AND meet baseline ML score
     passed = (avg_phi >= 1.0) and (avg_ml >= BASELINE_ML_SCORE)
 
+    # Ensure score is strictly in (0, 1) - validation requirement
+    clamped_score = max(0.0001, min(0.9999, final_score))
+
     return {
-        "score": round(final_score, 4),
+        "score": round(clamped_score, 4),
         "passed": passed,
         "breakdown": {
             "phi_score": round(avg_phi, 4),

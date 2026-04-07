@@ -138,7 +138,7 @@ def grade(
     regardless. Extra fields in submission are ignored.
     """
     if not ground_truth:
-        return {"score": 0.0, "passed": False, "info": {"error": "No ground truth"}}
+        return {"score": 0.0001, "passed": False, "info": {"error": "No ground truth"}}
 
     submitted_knowledge = normalize_record_list(submitted_knowledge)
     ok_len, err = validate_length_or_error(submitted_knowledge, len(ground_truth), "task4_knowledge")
@@ -199,9 +199,12 @@ def grade(
     
     final_score = (avg_e * ENTITY_WEIGHT) + (avg_c * CODE_WEIGHT) + (avg_s * SUMMARY_WEIGHT)
     passed = (avg_e >= ENTITY_PASS_BAR) and (avg_s >= SUMMARY_PASS_BAR)
-    
+
+    # Ensure score is strictly in (0, 1) - validation requirement
+    clamped_score = max(0.0001, min(0.9999, final_score))
+
     return {
-        "score": round(final_score, 4),
+        "score": round(clamped_score, 4),
         "passed": passed,
         "per_record": per_record,  # top-level for environment.py and direct consumers
         "breakdown": {

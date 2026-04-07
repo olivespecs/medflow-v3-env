@@ -183,7 +183,7 @@ def grade(
     }
     """
     if not ground_truth:
-        return {"score": 0.0, "breakdown": {}, "passed": False, "info": {"error": "No ground truth"}}
+        return {"score": 0.0001, "breakdown": {}, "passed": False, "info": {"error": "No ground truth"}}
 
     submitted_records = normalize_record_list(submitted_records)
     ok_len, err = validate_length_or_error(submitted_records, len(ground_truth), "task1_hygiene")
@@ -209,7 +209,7 @@ def grade(
         })
 
     if not all_field_scores:
-        return {"score": 0.0, "breakdown": {"per_record": per_record}, "passed": False, "info": {"pass_bar": PASS_BAR, "total_fields_evaluated": 0}}
+        return {"score": 0.0001, "breakdown": {"per_record": per_record}, "passed": False, "info": {"pass_bar": PASS_BAR, "total_fields_evaluated": 0}}
 
     # Calculate average per-field scores
     avg_per_field = {
@@ -226,8 +226,11 @@ def grade(
 
     passed = final_score >= PASS_BAR
 
+    # Ensure score is strictly in (0, 1) - validation requirement
+    clamped_score = max(0.0001, min(0.9999, final_score))
+
     return {
-        "score": round(final_score, 4),
+        "score": round(clamped_score, 4),
         "passed": passed,
         "breakdown": {
             "per_record": per_record,

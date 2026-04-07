@@ -35,7 +35,7 @@ def grade(
     """
     if len(submitted_records) != len(ground_truth):
         return {
-            "score": 0.0,
+            "score": 0.0001,
             "breakdown": {
                 "error": f"Expected {len(ground_truth)} records, got {len(submitted_records)}",
             },
@@ -46,19 +46,19 @@ def grade(
     for i, submitted in enumerate(submitted_records):
         if not isinstance(submitted, dict):
             return {
-                "score": 0.0,
+                "score": 0.0001,
                 "breakdown": {"error": f"Record {i} is not a JSON object"},
                 "passed": False,
             }
         if "clinical_notes" not in submitted:
             return {
-                "score": 0.0,
+                "score": 0.0001,
                 "breakdown": {"error": f"Record {i} missing 'clinical_notes'"},
                 "passed": False,
             }
         if not isinstance(submitted.get("clinical_notes"), str):
             return {
-                "score": 0.0,
+                "score": 0.0001,
                 "breakdown": {"error": f"Record {i} clinical_notes must be a string"},
                 "passed": False,
             }
@@ -109,8 +109,11 @@ def grade(
     
     passed = overall >= 0.70 and avg_patient >= 0.80
     
+    # Ensure score is strictly in (0, 1) - validation requirement
+    clamped_score = max(0.0001, min(0.9999, overall))
+
     return {
-        "score": round(overall, 4),
+        "score": round(clamped_score, 4),
         "breakdown": {
             "patient_phi_score": round(avg_patient, 4),
             "provider_phi_score": round(avg_provider, 4),

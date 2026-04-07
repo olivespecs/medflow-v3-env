@@ -138,8 +138,9 @@ class Reward(BaseModel):
 
     @classmethod
     def clamp(cls, score: float, **kwargs) -> "Reward":
-        """Helper that clamps score to [0, 1] before construction."""
-        return cls(score=max(0.0, min(1.0, float(score or 0.0))), **kwargs)
+        """Helper that clamps score to (0, 1) exclusive before construction."""
+        clamped = max(0.0001, min(0.9999, float(score or 0.0001)))
+        return cls(score=clamped, **kwargs)
 
 
 class State(BaseModel):

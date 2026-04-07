@@ -145,7 +145,7 @@ def grade(
     }
     """
     if not annotated_ground_truth:
-        return {"score": 0.0, "breakdown": {}, "passed": False, "info": {"error": "No ground truth"}}
+        return {"score": 0.0001, "breakdown": {}, "passed": False, "info": {"error": "No ground truth"}}
 
     submitted_records = normalize_record_list(submitted_records)
     ok_len, err = validate_length_or_error(submitted_records, len(annotated_ground_truth), "task2_redaction")
@@ -196,7 +196,7 @@ def grade(
 
     # Score is the straightforward weighted sum — no additional flat penalty.
     # Leaks are already penalised proportionally via the per-record phi_score.
-    final_score = max(0.0, min(1.0, avg_phi * PHI_WEIGHT + avg_utility * UTILITY_WEIGHT))
+    final_score = max(0.0001, min(0.9999, avg_phi * PHI_WEIGHT + avg_utility * UTILITY_WEIGHT))
 
     passed = (avg_phi >= 1.0) and (avg_utility >= UTILITY_PASS_BAR)
 
