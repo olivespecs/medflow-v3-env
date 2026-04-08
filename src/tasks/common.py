@@ -21,7 +21,8 @@ def validate_length_or_error(
     """Ensure submission length matches ground truth; return error breakdown when not."""
     if len(submitted) != expected_len:
         return False, {
-            "score": 0.0,
+            # OpenEnv validators require scores to be strictly within (0, 1).
+            "score": 0.0001,
             "breakdown": {"error": f"{task_label}: expected {expected_len} items, got {len(submitted)}"},
             "passed": False,
             "info": {"expected_items": expected_len, "submitted_items": len(submitted)},
