@@ -390,15 +390,27 @@ def _run_task_via_api(
     model_name: str | None = None,
 ) -> dict[str, Any]:
     """Run one task episode through the OpenEnv HTTP API."""
-    with httpx.Client(timeout=120.0) as http:
-        # 1. Reset
-        reset_resp = http.post(
-            f"{env_base_url}/reset",
-            json={"task_id": task_id, "seed": seed},
-        )
-        reset_resp.raise_for_status()
-        obs = reset_resp.json()["observation"]
+    try:
+        with httpx.Client(timeout=120.0) as http:
+            # 1. Reset
+            reset_resp = http.post(
+                f"{env_base_url}/reset",
+                json={"task_id": task_id, "seed": seed},
+            )
+            reset_resp.raise_for_status()
+            obs = reset_resp.json()["observation"]
+    except Exception as e:
+        _stderr_log("ERROR", f"Failed to connect to OpenEnv at {env_base_url}: {e}")
+        return {
+            "task_id": task_id,
+            "score": 0.0001,
+            "breakdown": {},
+            "passed": False,
+            "done": True,
+            "error": f"Connection failed: {e}",
+        }
 
+    try:
         task_description = obs["task_description"]
         records = obs["records"]
 
@@ -429,7 +441,7 @@ def _run_task_via_api(
             )
             return {
                 "task_id": task_id,
-                "score": 0.0,
+                "score": 0.0001,
                 "breakdown": {},
                 "passed": False,
                 "done": True,
@@ -444,7 +456,7 @@ def _run_task_via_api(
             _stderr_log("INFO", f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content.")
             return {
                 "task_id": task_id,
-                "score": 0.0,
+                "score": 0.0001,
                 "breakdown": {},
                 "passed": False,
                 "done": True,
@@ -459,21 +471,42 @@ def _run_task_via_api(
         else:
             action_json["records"] = processed_payload
 
-        step_resp = http.post(
-            f"{env_base_url}/step",
-            params={"episode_id": reset_resp.json()["episode_id"]},
-            json=action_json,
-        )
-        step_resp.raise_for_status()
-        step_payload = step_resp.json()
+        try:
+            step_resp = http.post(
+                f"{env_base_url}/step",
+                params={"episode_id": reset_resp.json()["episode_id"]},
+                json=action_json,
+            )
+            step_resp.raise_for_status()
+            step_payload = step_resp.json()
+        except Exception as e:
+            _stderr_log("ERROR", f"Failed to submit task {task_id}: {e}")
+            return {
+                "task_id": task_id,
+                "score": 0.0001,
+                "breakdown": {},
+                "passed": False,
+                "done": True,
+                "error": f"Step failed: {e}",
+            }
 
-    return {
-        "task_id": task_id,
-        "score": float(step_payload.get("reward", 0.0)),
-        "breakdown": step_payload.get("info", {}).get("breakdown", {}),
-        "passed": bool(step_payload.get("info", {}).get("passed", False)),
-        "done": bool(step_payload.get("done", False)),
-    }
+        return {
+            "task_id": task_id,
+            "score": float(step_payload.get("reward", 0.0)),
+            "breakdown": step_payload.get("info", {}).get("breakdown", {}),
+            "passed": bool(step_payload.get("info", {}).get("passed", False)),
+            "done": bool(step_payload.get("done", False)),
+        }
+    except Exception as e:
+        _stderr_log("ERROR", f"Unexpected error in task {task_id}: {e}")
+        return {
+            "task_id": task_id,
+            "score": 0.0001,
+            "breakdown": {},
+            "passed": False,
+            "done": True,
+            "error": f"Unexpected error: {e}",
+        }
 
 
 def _run_demo_local(task_ids: list[int], seed: int) -> list[dict[str, Any]]:
