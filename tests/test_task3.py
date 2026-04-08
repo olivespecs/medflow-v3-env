@@ -343,9 +343,9 @@ def test_many_records():
 
 
 def test_empty_ground_truth_returns_zero():
-    """Empty ground truth should return score 0.0."""
+    """Empty ground truth should return the strict lower bound score."""
     result = task3_anonymization.grade([], [])
-    assert result["score"] == 0.0
+    assert result["score"] == 0.0001
     assert not result["passed"]
 
 

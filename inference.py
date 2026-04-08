@@ -3,10 +3,10 @@ Hackathon inference runner (required filename: inference.py).
 
 MANDATORY
 - Before submitting, ensure token auth is configured for LLM mode:
-    HF_TOKEN       Your Hugging Face / API key (required; no default).
+    API_KEY        Your injected LiteLLM proxy key (required in strict mode).
 
 - Optional overrides:
-    API_BASE_URL   The API endpoint for the LLM (default: HF router URL).
+    API_BASE_URL   The injected LiteLLM proxy URL (required in strict mode).
     MODEL_NAME     The model identifier to use for inference (default: Llama-3.3-70B-Instruct).
      
 - The inference script must be named `inference.py` and placed in the root directory of the project 
@@ -33,6 +33,7 @@ DEFAULT_MODEL_NAME = "meta-llama/Llama-3.3-70B-Instruct"
 DEFAULT_ENV_BASE_URL = os.getenv("OPENENV_BASE_URL", "https://olivespecs-medflow-v3-env.hf.space")
 SUPPORTED_TASK_IDS = [1, 2, 3, 4, 5]
 VERBOSE_STDERR_LOGS = os.getenv("INFERENCE_VERBOSE", "0") == "1"
+STRICT_PROXY_MODE = os.getenv("INFERENCE_STRICT_PROXY", "1") == "1"
 
 # Optional - if you use from_docker_image()
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
@@ -177,11 +178,21 @@ def _build_client() -> tuple[Any, str]:
 
     api_base_url = os.getenv("API_BASE_URL", DEFAULT_API_BASE_URL)
     model_name = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
-    # Supports both HF_TOKEN and API_KEY/OPENAI_API_KEY as per instructions
-    hf_token = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("API_KEY")
+    hf_token = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
 
     missing = []
-    if not hf_token: missing.append("HF_TOKEN or API_KEY/OPENAI_API_KEY")
+    if STRICT_PROXY_MODE:
+        # Validator-safe mode: enforce injected proxy credentials only.
+        if not os.getenv("API_BASE_URL"):
+            missing.append("API_BASE_URL")
+        if not api_key:
+            missing.append("API_KEY")
+    else:
+        # Local/dev compatibility mode.
+        token = api_key or hf_token
+        if not token:
+            missing.append("API_KEY or HF_TOKEN/OPENAI_API_KEY")
 
     if missing:
         raise EnvironmentError(
@@ -192,7 +203,9 @@ def _build_client() -> tuple[Any, str]:
     # Narrow optional type for static type checkers.
     assert model_name is not None
 
-    return OpenAI(base_url=api_base_url, api_key=hf_token), model_name
+    token = api_key if STRICT_PROXY_MODE else (api_key or hf_token)
+    assert token is not None
+    return OpenAI(base_url=api_base_url, api_key=token), model_name
 
 
 def _is_response_format_unsupported(err: Exception) -> bool:
@@ -537,19 +550,12 @@ def main() -> None:
     if args.all or not task_ids:
         task_ids = SUPPORTED_TASK_IDS.copy()
 
-    # Check if LLM token variables are set. MODEL_NAME has a default.
-    has_llm = bool(os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY"))
-    
-    # Auto-select mode: demo if no LLM vars, LLM inference if vars are present
-    mode = "demo" if (args.demo or not has_llm) else "llm"
+    mode = "demo" if args.demo else "llm"
     model_for_logs = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME) if mode == "llm" else "hybrid-baseline"
     log_start(task_ids, mode, model_for_logs, args.env_base_url.rstrip("/"), int(args.seed))
 
-    if args.demo or not has_llm:
-        if not args.demo:
-            _stderr_log("INFO", "No LLM env vars found - running local deterministic baseline")
-        else:
-            _stderr_log("INFO", f"Running local demo for tasks: {task_ids}")
+    if args.demo:
+        _stderr_log("INFO", f"Running local demo for tasks: {task_ids}")
         results = _run_demo_local(task_ids=task_ids, seed=args.seed)
         for r in results:
             log_step(
@@ -563,8 +569,18 @@ def main() -> None:
         try:
             client, model_name = _build_client()
         except Exception as e:
-            _stderr_log("ERROR", f"Failed to initialize LLM client: {e}. Falling back to demo mode.")
-            results = _run_demo_local(task_ids=task_ids, seed=args.seed)
+            _stderr_log("ERROR", f"Failed to initialize LLM client: {e}")
+            results = [
+                {
+                    "task_id": task_id,
+                    "score": 0.0001,
+                    "breakdown": {},
+                    "passed": False,
+                    "done": True,
+                    "error": f"LLM client initialization failed: {e}",
+                }
+                for task_id in task_ids
+            ]
             for r in results:
                 log_step(
                     task_id=int(r.get("task_id", -1)),

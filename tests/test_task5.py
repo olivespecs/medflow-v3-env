@@ -69,13 +69,10 @@ def test_over_redaction_fails():
 def test_mismatched_length_returns_error():
     truths = _make_truth_records()
     result = task5_reasoning.grade([], truths)
-    assert result["score"] == 0.0
+    assert result["score"] == 0.0001
     assert "error" in result["breakdown"]
 
 
 def test_empty_truth_returns_perfect_score():
     result = task5_reasoning.grade([], [])
-    assert result["score"] == 0.0 # Wait, the grader returns 0.0 if empty ground_truth? 
-    # Let's check task5_reasoning.py logic for empty ground_truth.
-    # Actually, the grader has: if len(submitted_records) != len(ground_truth): return error
-    # So if both are empty, it might work or return 0.0.
+    assert result["score"] == 0.0001

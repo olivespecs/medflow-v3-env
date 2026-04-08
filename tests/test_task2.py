@@ -327,7 +327,7 @@ def test_score_formula_weighted_correctly():
 
 
 def test_no_ground_truth_returns_zero():
-    """Empty ground truth should return score 0.0."""
+    """Empty ground truth should return the strict lower bound score."""
     result = task2_redaction.grade([], [])
-    assert result["score"] == 0.0
+    assert result["score"] == 0.0001
     assert not result["passed"]

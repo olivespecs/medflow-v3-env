@@ -78,10 +78,10 @@ def test_score_between_0_and_1():
 
 
 def test_grade_empty_list():
-    """Submitting empty list should return 0.0 score without crashing."""
+    """Submitting empty list should return strict lower bound without crashing."""
     truths = _make_env(n=2)
     result = task4_knowledge.grade([], truths)
-    assert result["score"] == 0.0
+    assert result["score"] == 0.0001
 
 
 # ============================================================================
@@ -447,9 +447,9 @@ def test_fewer_submissions_than_truths():
 
 
 def test_empty_ground_truth():
-    """Empty ground truth should return zero score."""
+    """Empty ground truth should return strict lower bound score."""
     result = task4_knowledge.grade([{"entities": [], "summary": "test"}], [])
-    assert result["score"] == 0.0
+    assert result["score"] == 0.0001
     assert not result["passed"]
 
 
