@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 # Standard defaults from hackathon instructions
 DEFAULT_API_BASE_URL = "https://router.huggingface.co/v1"
 DEFAULT_MODEL_NAME = "meta-llama/Llama-3.3-70B-Instruct"
-DEFAULT_ENV_BASE_URL = "http://localhost:7860"
+DEFAULT_ENV_BASE_URL = os.getenv("OPENENV_BASE_URL", "https://olivespecs-medflow-v3-env.hf.space")
 SUPPORTED_TASK_IDS = [1, 2, 3, 4, 5]
 VERBOSE_STDERR_LOGS = os.getenv("INFERENCE_VERBOSE", "0") == "1"
 
@@ -390,123 +390,103 @@ def _run_task_via_api(
     model_name: str | None = None,
 ) -> dict[str, Any]:
     """Run one task episode through the OpenEnv HTTP API."""
+    def _error_result(message: str) -> dict[str, Any]:
+        return {
+            "task_id": task_id,
+            "score": 0.0001,
+            "breakdown": {},
+            "passed": False,
+            "done": True,
+            "error": message,
+        }
+
     try:
         with httpx.Client(timeout=120.0) as http:
             # 1. Reset
-            reset_resp = http.post(
-                f"{env_base_url}/reset",
-                json={"task_id": task_id, "seed": seed},
+            try:
+                reset_resp = http.post(
+                    f"{env_base_url}/reset",
+                    json={"task_id": task_id, "seed": seed},
+                )
+                reset_resp.raise_for_status()
+                reset_payload = reset_resp.json()
+                obs = reset_payload["observation"]
+                episode_id = reset_payload["episode_id"]
+            except Exception as e:
+                _stderr_log("ERROR", f"Task {task_id} reset failed at {env_base_url}: {e}")
+                return _error_result(f"Reset failed: {e}")
+
+            task_description = obs["task_description"]
+            records = obs["records"]
+
+            # 2. Process (LLM)
+            if not client or not model_name:
+                raise ValueError("LLM mode requires client and model_name")
+
+            processed_payload, raw_content = _llm_process_task(
+                client=client,
+                model_name=model_name,
+                task_id=task_id,
+                task_description=task_description,
+                records=records,
             )
-            reset_resp.raise_for_status()
-            obs = reset_resp.json()["observation"]
-    except Exception as e:
-        _stderr_log("ERROR", f"Failed to connect to OpenEnv at {env_base_url}: {e}")
-        return {
-            "task_id": task_id,
-            "score": 0.0001,
-            "breakdown": {},
-            "passed": False,
-            "done": True,
-            "error": f"Connection failed: {e}",
-        }
 
-    try:
-        task_description = obs["task_description"]
-        records = obs["records"]
+            expected_items = len(records)
 
-        # 2. Process (LLM)
-        if not client or not model_name:
-            raise ValueError("LLM mode requires client and model_name")
-            
-        processed_payload, raw_content = _llm_process_task(
-            client=client,
-            model_name=model_name,
-            task_id=task_id,
-            task_description=task_description,
-            records=records,
-        )
+            # 3a. Reject wrong-length payloads before sending to grader.
+            if processed_payload and len(processed_payload) != expected_items:
+                redacted_len = len(raw_content or "")
+                _stderr_log("ERROR", f"Task {task_id} LLM output had wrong item count.")
+                _stderr_log(
+                    "INFO",
+                    (
+                        f"Expected {expected_items}, got {len(processed_payload)}. "
+                        f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content."
+                    ),
+                )
+                return {
+                    **_error_result(
+                        f"Wrong item count: expected {expected_items}, got {len(processed_payload)}"
+                    ),
+                    "model_output_len": redacted_len,
+                }
 
-        expected_items = len(records)
+            # 3b. Handle empty or malformed payloads before posting
+            if not processed_payload:
+                redacted_len = len(raw_content or "")
+                _stderr_log("ERROR", f"Task {task_id} LLM output was empty or malformed.")
+                _stderr_log("INFO", f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content.")
+                return {**_error_result("Empty/Malformed model payload"), "model_output_len": redacted_len}
 
-        # 3a. Harden: reject wrong-length payloads before sending to grader.
-        if processed_payload and len(processed_payload) != expected_items:
-            redacted_len = len(raw_content or "")
-            _stderr_log("ERROR", f"Task {task_id} LLM output had wrong item count.")
-            _stderr_log(
-                "INFO",
-                (
-                    f"Expected {expected_items}, got {len(processed_payload)}. "
-                    f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content."
-                ),
-            )
+            # 4. Step
+            action_json: dict[str, Any] = {"is_final": True}
+            if task_id == 4:
+                action_json["knowledge"] = processed_payload
+            else:
+                action_json["records"] = processed_payload
+
+            try:
+                step_resp = http.post(
+                    f"{env_base_url}/step",
+                    params={"episode_id": episode_id},
+                    json=action_json,
+                )
+                step_resp.raise_for_status()
+                step_payload = step_resp.json()
+            except Exception as e:
+                _stderr_log("ERROR", f"Failed to submit task {task_id}: {e}")
+                return _error_result(f"Step failed: {e}")
+
             return {
                 "task_id": task_id,
-                "score": 0.0001,
-                "breakdown": {},
-                "passed": False,
-                "done": True,
-                "error": f"Wrong item count: expected {expected_items}, got {len(processed_payload)}",
-                "model_output_len": redacted_len,
+                "score": float(step_payload.get("reward", 0.0)),
+                "breakdown": step_payload.get("info", {}).get("breakdown", {}),
+                "passed": bool(step_payload.get("info", {}).get("passed", False)),
+                "done": bool(step_payload.get("done", False)),
             }
-
-        # 3b. Harden: Handle empty or malformed payloads before posting
-        if not processed_payload:
-            redacted_len = len(raw_content or "")
-            _stderr_log("ERROR", f"Task {task_id} LLM output was empty or malformed.")
-            _stderr_log("INFO", f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content.")
-            return {
-                "task_id": task_id,
-                "score": 0.0001,
-                "breakdown": {},
-                "passed": False,
-                "done": True,
-                "error": "Empty/Malformed model payload",
-                "model_output_len": redacted_len,
-            }
-
-        # 4. Step
-        action_json: dict[str, Any] = {"is_final": True}
-        if task_id == 4:
-            action_json["knowledge"] = processed_payload
-        else:
-            action_json["records"] = processed_payload
-
-        try:
-            step_resp = http.post(
-                f"{env_base_url}/step",
-                params={"episode_id": reset_resp.json()["episode_id"]},
-                json=action_json,
-            )
-            step_resp.raise_for_status()
-            step_payload = step_resp.json()
-        except Exception as e:
-            _stderr_log("ERROR", f"Failed to submit task {task_id}: {e}")
-            return {
-                "task_id": task_id,
-                "score": 0.0001,
-                "breakdown": {},
-                "passed": False,
-                "done": True,
-                "error": f"Step failed: {e}",
-            }
-
-        return {
-            "task_id": task_id,
-            "score": float(step_payload.get("reward", 0.0)),
-            "breakdown": step_payload.get("info", {}).get("breakdown", {}),
-            "passed": bool(step_payload.get("info", {}).get("passed", False)),
-            "done": bool(step_payload.get("done", False)),
-        }
     except Exception as e:
         _stderr_log("ERROR", f"Unexpected error in task {task_id}: {e}")
-        return {
-            "task_id": task_id,
-            "score": 0.0001,
-            "breakdown": {},
-            "passed": False,
-            "done": True,
-            "error": f"Unexpected error: {e}",
-        }
+        return _error_result(f"Unexpected error: {e}")
 
 
 def _run_demo_local(task_ids: list[int], seed: int) -> list[dict[str, Any]]:
@@ -516,18 +496,31 @@ def _run_demo_local(task_ids: list[int], seed: int) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for task_id in task_ids:
-        env = MedicalOpenEnv()
-        env.reset(task_id=task_id, seed=seed)
-        result = hybrid_baseline(env)
-        results.append(
-            {
-                "task_id": task_id,
-                "score": float(result.get("score", 0.0)),
-                "breakdown": result.get("breakdown", {}),
-                "passed": bool(result.get("passed", False)),
-                "done": True,
-            }
-        )
+        try:
+            env = MedicalOpenEnv()
+            env.reset(task_id=task_id, seed=seed)
+            result = hybrid_baseline(env)
+            results.append(
+                {
+                    "task_id": task_id,
+                    "score": float(result.get("score", 0.0)),
+                    "breakdown": result.get("breakdown", {}),
+                    "passed": bool(result.get("passed", False)),
+                    "done": True,
+                }
+            )
+        except Exception as e:
+            _stderr_log("ERROR", f"Demo baseline failed for task {task_id}: {e}")
+            results.append(
+                {
+                    "task_id": task_id,
+                    "score": 0.0001,
+                    "breakdown": {},
+                    "passed": False,
+                    "done": True,
+                    "error": f"Demo failed: {e}",
+                }
+            )
     return results
 
 
@@ -536,7 +529,7 @@ def main() -> None:
     parser.add_argument("--task", type=int, action="append", choices=SUPPORTED_TASK_IDS, dest="tasks")
     parser.add_argument("--all", action="store_true", help="Run all tasks")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--env-base-url", default=os.getenv("OPENENV_BASE_URL", DEFAULT_ENV_BASE_URL))
+    parser.add_argument("--env-base-url", default=DEFAULT_ENV_BASE_URL)
     parser.add_argument("--demo", action="store_true", help="Run deterministic local baseline")
     args = parser.parse_args()
 
@@ -567,7 +560,28 @@ def main() -> None:
                 error=r.get("error"),
             )
     else:
-        client, model_name = _build_client()
+        try:
+            client, model_name = _build_client()
+        except Exception as e:
+            _stderr_log("ERROR", f"Failed to initialize LLM client: {e}. Falling back to demo mode.")
+            results = _run_demo_local(task_ids=task_ids, seed=args.seed)
+            for r in results:
+                log_step(
+                    task_id=int(r.get("task_id", -1)),
+                    score=float(r.get("score", 0.0)),
+                    passed=bool(r.get("passed", False)),
+                    done=bool(r.get("done", True)),
+                    error=r.get("error"),
+                )
+            avg = sum(r["score"] for r in results) / max(len(results), 1)
+            log_end(
+                success=all(bool(r.get("passed", False)) for r in results),
+                tasks=task_ids,
+                average_score=avg,
+                results=results,
+            )
+            return
+
         _stderr_log("INFO", f"Running LLM inference ({model_name}) for tasks: {task_ids}")
         results: list[dict[str, Any]] = []
         for task_id in task_ids:
@@ -596,4 +610,25 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Last-resort guard: never crash evaluator due to uncaught inference error.
+        _emit(
+            "END",
+            {
+                "success": False,
+                "tasks": [],
+                "average_score": 0.0,
+                "results": [
+                    {
+                        "task_id": -1,
+                        "score": 0.0001,
+                        "breakdown": {},
+                        "passed": False,
+                        "done": True,
+                        "error": f"Fatal inference error: {e}",
+                    }
+                ],
+            },
+        )

@@ -147,3 +147,38 @@ def test_run_task_via_api_task4_uses_llm_payload(monkeypatch):
     step_action = capture["step_action"]
     assert isinstance(step_action, dict)
     assert step_action["knowledge"][0]["summary"] == "LLM_SUMMARY_SHOULD_BE_SENT"
+
+
+class _FailingHTTPClient:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        del exc_type, exc, tb
+        return False
+
+    def post(self, url: str, json: dict | None = None, params: dict | None = None):
+        del url, json, params
+        raise RuntimeError("connection refused")
+
+
+def test_run_task_via_api_handles_reset_connection_failure(monkeypatch):
+    def _fake_http_client_factory(*, timeout):
+        del timeout
+        return _FailingHTTPClient()
+
+    monkeypatch.setattr(inference.httpx, "Client", _fake_http_client_factory)
+
+    result = inference._run_task_via_api(
+        env_base_url="http://missing-env",
+        task_id=1,
+        seed=42,
+        client=object(),
+        model_name="dummy-model",
+    )
+
+    assert result["task_id"] == 1
+    assert result["done"] is True
+    assert result["passed"] is False
+    assert result["score"] > 0.0
+    assert "Reset failed" in str(result.get("error", ""))
