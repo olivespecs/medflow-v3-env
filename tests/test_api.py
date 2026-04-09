@@ -967,13 +967,13 @@ class TestEdgeCases:
             assert obs["step"] == expected_step
 
     def test_reward_score_bounds(self, client: TestClient, episode_id: str):
-        """Reward scores are bounded between 0 and 1."""
+        """Reward scores stay strictly inside (0, 1) per OpenEnv validation."""
         action = {"records": [{"record_id": "test"}], "is_final": False}
         response = client.post("/step", params={"episode_id": episode_id}, json=action)
         assert response.status_code == 200
         
         reward = response.json()["reward"]
-        assert 0.0 <= reward <= 1.0
+        assert 0.0 < reward < 1.0
 
     def test_info_contains_breakdown(self, client: TestClient, episode_id: str):
         """Step response info contains breakdown details."""

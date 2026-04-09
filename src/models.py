@@ -131,16 +131,21 @@ class Action(BaseModel):
 class Reward(BaseModel):
     """Step-level reward signal."""
 
-    score: float = Field(ge=0.0, le=1.0)
+    # OpenEnv / hackathon validators require the primary score strictly in (0, 1).
+    score: float = Field(gt=0.0, lt=1.0)
     breakdown: dict[str, Any] = Field(default_factory=dict)   # nested dicts/lists allowed
     done: bool = False
     info: dict[str, Any] = Field(default_factory=dict)
 
+    @staticmethod
+    def clamp_score(score: float | None) -> float:
+        """Map any grader output to (0, 1) exclusive; stable for round-trip APIs."""
+        return max(0.0001, min(0.9999, float(score or 0.0001)))
+
     @classmethod
     def clamp(cls, score: float, **kwargs) -> "Reward":
         """Helper that clamps score to (0, 1) exclusive before construction."""
-        clamped = max(0.0001, min(0.9999, float(score or 0.0001)))
-        return cls(score=clamped, **kwargs)
+        return cls(score=cls.clamp_score(score), **kwargs)
 
 
 class State(BaseModel):

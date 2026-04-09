@@ -998,7 +998,7 @@ def list_tasks() -> dict:
     }
 
 
-@app.post("/reset", status_code=200)
+0@app.post("/reset", status_code=200)
 def reset_endpoint(request: Request, req: ResetRequest = Body(default=None)) -> dict:
     """
     Start a new episode.

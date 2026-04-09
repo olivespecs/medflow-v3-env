@@ -231,12 +231,14 @@ class MedicalOpenEnv:
         self._last_submitted = submitted_data
 
         grade_result = self._grade(submitted_data)
-        current_score = grade_result.get("score", 0.0)
-        self._last_grade = grade_result
+        raw_score = float(grade_result.get("score", 0.0))
+        # Primary score must stay strictly in (0, 1) for validators; rounding can yield 1.0 otherwise.
+        clamped_score = Reward.clamp_score(raw_score)
+        self._last_grade = {**grade_result, "score": clamped_score}
 
-        # Calculate incremental reward shaping
+        # Calculate incremental reward shaping (use clamped scores for consistent audit trail)
         previous_score = self._history[-1]["score"] if self._history else 0.0
-        improvement = current_score - previous_score
+        improvement = clamped_score - previous_score
         
         # Incremental rewards for improvements/penalties for regressions
         improvement_bonus = 0.0
@@ -249,12 +251,12 @@ class MedicalOpenEnv:
         step_penalty = -0.01
         
         # Final shaped reward
-        shaped_score = current_score + improvement_bonus + step_penalty
+        shaped_score = clamped_score + improvement_bonus + step_penalty
 
         # Update history for audit trail
         history_entry = {
             "step": self._step,
-            "score": current_score,
+            "score": clamped_score,
             "shaped_score": shaped_score,
             "improvement": improvement,
             "breakdown": grade_result.get("breakdown", {}),
@@ -269,7 +271,7 @@ class MedicalOpenEnv:
                 "task_id": self._task_id,
                 "seed": self._seed,
                 "step": self._step,
-                "score": current_score,
+                "score": clamped_score,
                 "shaped_score": shaped_score,
                 "improvement": improvement,
                 "passed": grade_result.get("passed", False),
@@ -280,11 +282,12 @@ class MedicalOpenEnv:
         done = action.is_final or (self._step >= MAX_STEPS)
         self._done = done
 
-        reward = Reward.clamp(
-            score=current_score,          # True performance signal — never shaped
+        reward = Reward(
+            score=clamped_score,
             breakdown={
                 **grade_result.get("breakdown", {}),
-                "base_score": current_score,
+                "base_score": clamped_score,
+                "grader_raw_score": raw_score,
                 "shaped_score": round(shaped_score, 4),   # Available for RL agents; NOT the primary signal
                 "improvement_bonus": round(improvement_bonus, 4),
                 "step_penalty": step_penalty,
@@ -314,7 +317,7 @@ class MedicalOpenEnv:
         # [P3] Add actionable feedback hints to metadata
         metadata = {
             "seed": self._seed,
-            "last_score": grade_result["score"],
+            "last_score": clamped_score,
             "passed": grade_result.get("passed", False),
         }
 
@@ -386,7 +389,7 @@ class MedicalOpenEnv:
         # Regrade should mirror Reward.score from step() for idempotency.
         last_entry = self._history[-1]
         return {
-            "score": last_entry.get("score", 0.0),
+            "score": last_entry.get("score", Reward.clamp_score(None)),
             "breakdown": last_entry.get("breakdown", {}),
             "passed": last_entry.get("passed", False),
             "info": {
