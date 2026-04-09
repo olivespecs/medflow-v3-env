@@ -138,9 +138,9 @@ reward_space:
   properties:
     score:
       type: number
-      description: "Primary episode score; must be strictly between 0 and 1 (not inclusive)."
-      minimum: 0.0001
-      maximum: 0.9999
+      description: "Primary episode score in range [0.0, 1.0]."
+      minimum: 0.0
+      maximum: 1.0
     breakdown:
       type: object
       description: >
@@ -177,8 +177,8 @@ state_space:
       description: "Whether episode has ended"
     last_score:
       type: number
-      minimum: 0.0001
-      maximum: 0.9999
+      minimum: 0.0
+      maximum: 1.0
       nullable: true
       description: "Score from last submitted action"
     last_breakdown:

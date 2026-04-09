@@ -376,7 +376,7 @@ class MedicalOpenEnv:
                 "error": message,
                 "error_type": "state_error",
             }
-        
+
         # Get the last graded result from history
         if not self._history:
             message = "No grading history available."
@@ -385,11 +385,15 @@ class MedicalOpenEnv:
                 "error": message,
                 "error_type": "state_error",
             }
-        
+
         # Regrade should mirror Reward.score from step() for idempotency.
         last_entry = self._history[-1]
+        last_score = last_entry.get("score", 0.0001)
+        # Ensure score is strictly in (0, 1)
+        if not (0.0 < last_score < 1.0):
+            last_score = Reward.clamp_score(last_score)
         return {
-            "score": last_entry.get("score", Reward.clamp_score(None)),
+            "score": last_score,
             "breakdown": last_entry.get("breakdown", {}),
             "passed": last_entry.get("passed", False),
             "info": {

@@ -7,38 +7,36 @@ name = "medical-openenv"
 version = "3.0.0"
 description = "Synthetic healthcare OpenEnv for medical record cleaning and PHI redaction."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "pydantic>=2.0.0",
     "faker>=24.0.0",
-    "openenv>=0.1.0,<1.0.0",
+    "openenv>=0.1.0",
     "httpx>=0.27.0",
     "gradio>=4.0.0",
     "pandas>=2.0.0",
     "numpy>=1.26.0",
     "fastmcp>=0.1.0",
     "python-dotenv>=1.0.0",
-    "openai>=1.14.0,<2.0.0",  # required by inference.py (spec-mandated entry point)
-    "torch>=2.2.0,<3.0.0",
-    "transformers>=4.38.0,<5.0.0",
-    "evaluate>=0.4.0,<1.0.0",
-    "bert-score>=0.3.13,<1.0.0",
-    "sentence-transformers>=2.7.0,<4.0.0",
+    "openai>=1.14.0",
+    "torch>=2.2.0",
+    "transformers>=4.38.0",
+    "evaluate>=0.4.0",
+    "bert-score>=0.3.13",
+    "sentence-transformers>=2.7.0",
     "gymnasium>=0.26.0",
-    "pytest>=8.0.0,<10.0.0",
+    "pytest>=8.0.0",
     "hypothesis>=6.100.0",
 ]
 
 [project.optional-dependencies]
 test = [
-    "pytest>=8.0.0,<10.0.0",
+    "pytest>=8.0.0",
     "hypothesis>=6.100.0",
 ]
-# Alias kept for backwards compatibility — openai is now a core dep above.
-llm = ["openai>=1.14.0,<2.0.0"]
+llm = ["openai>=1.14.0"]
 
 [project.scripts]
 server = "src.main:main"
-

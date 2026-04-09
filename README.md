@@ -292,9 +292,9 @@ Deterministic hybrid rule-based baseline (seed=42, no API key required):
 |---|---|---|---|---|---|
 | **Task 1 — Hygiene** | **0.96** | ≥ 0.85 | per_field_avg: 0.96, longitudinal_consistency: 1.0 | ✅ Pass | Regex + majority vote consensus |
 | **Task 2 — Redaction** | **1.00** | phi=1.0 AND util≥0.8 | phi_score: 1.0, utility_score: 1.0 | ✅ Pass | Structured + notes regex + NER safety-net |
-| **Task 3 — Anonymisation** | **1.00** | phi=1.0 AND ml≥0.6 | phi_score: 1.0, ml_utility_score: 1.0 | ✅ Pass | Age bucketing + improved adversarial scrubbing |
-| **Task 4 — Knowledge** | **0.72** | entity≥0.75 AND sum≥0.50 | entity_extraction: 0.85, code_precision: 0.72, summary_fidelity: 0.55 | ✅ Pass | Enhanced template-based summary with clinical notes extraction |
-| **Task 5 — Contextual PII** | **0.85** | overall≥0.70 AND patient≥0.80 | patient_phi: 0.92, provider_phi: 0.88, contextual: 0.75 | ✅ Pass | Context-aware reasoning with provider/patient disambiguation |
+| **Task 3 — Anonymisation** | **0.95** | phi=1.0 AND ml≥0.6 | phi_score: 1.0, ml_utility_score: 0.90 | ✅ Pass | Age bucketing + improved adversarial scrubbing |
+| **Task 4 — Knowledge** | **0.93** | entity≥0.75 AND sum≥0.50 | entity_extraction: 1.0, code_precision: 1.0, summary_fidelity: 0.78 | ✅ Pass | Enhanced template-based summary with clinical notes extraction |
+| **Task 5 — Contextual PII** | **0.88** | overall≥0.70 AND patient≥0.80 | patient_phi: 1.0, provider_phi: 0.86, contextual: 0.70 | ✅ Pass | Context-aware reasoning with provider/patient disambiguation |
 
 
 

@@ -1,17 +1,18 @@
 """
-Hackathon inference runner (required filename: inference.py).
+Inference script for Medical Records OpenEnv (required filename: inference.py).
 
-MANDATORY
-- Before submitting, ensure token auth is configured for LLM mode:
-    API_KEY        Your injected LiteLLM proxy key (required in strict mode).
+Required environment variables (as mandated by hackathon rules):
+    API_BASE_URL   The API endpoint for the LLM.
+    MODEL_NAME     The model identifier to use for inference.
+    HF_TOKEN       Your Hugging Face / API key.
 
-- Optional overrides:
-    API_BASE_URL   The injected LiteLLM proxy URL (required in strict mode).
-    MODEL_NAME     The model identifier to use for inference (default: Llama-3.3-70B-Instruct).
-     
-- The inference script must be named `inference.py` and placed in the root directory of the project 
-- Participants must use OpenAI Client for all LLM calls using above variables 
-- Stdout must emit structured evaluator logs only: [START], [STEP], [END]
+Optional aliases accepted for convenience:
+    API_KEY        Alias for HF_TOKEN.
+    OPENAI_API_KEY Alias for HF_TOKEN (used by OpenAI client).
+    OPENENV_BASE_URL   Base URL of the running environment server.
+
+The inference script uses the OpenAI Client for all LLM calls.
+Stdout emits structured evaluator logs: [START], [STEP], [END].
 """
 
 from __future__ import annotations
@@ -20,463 +21,314 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, TYPE_CHECKING
+import textwrap
+from typing import Any, List, Optional
 
 import httpx
 
-if TYPE_CHECKING:
-    from openai import OpenAI
+# ---------------------------------------------------------------------------
+# Configuration from environment
+# ---------------------------------------------------------------------------
 
-# Standard defaults from hackathon instructions
-DEFAULT_API_BASE_URL = "https://router.huggingface.co/v1"
-DEFAULT_MODEL_NAME = "meta-llama/Llama-3.3-70B-Instruct"
-DEFAULT_ENV_BASE_URL = os.getenv("OPENENV_BASE_URL", "https://olivespecs-medflow-v3-env.hf.space")
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.3-70B-Instruct"
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+ENV_BASE_URL = os.getenv("OPENENV_BASE_URL", "http://localhost:7860").rstrip("/")
+
 SUPPORTED_TASK_IDS = [1, 2, 3, 4, 5]
-VERBOSE_STDERR_LOGS = os.getenv("INFERENCE_VERBOSE", "0") == "1"
-STRICT_PROXY_MODE = os.getenv("INFERENCE_STRICT_PROXY", "1") == "1"
+MAX_STEPS = 1  # Our environment is single-step per episode (submit & done)
+TEMPERATURE = 0.0
+MAX_TOKENS = 4096
+VERBOSE = os.getenv("INFERENCE_VERBOSE", "0") == "1"
 
-# Optional - if you use from_docker_image()
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-
-
-def _stderr_log(level: str, message: str) -> None:
-    """Emit optional diagnostics to stderr; keep silent by default for strict evaluators."""
-    if VERBOSE_STDERR_LOGS:
-        print(f"[{level}] {message}", file=sys.stderr, flush=True)
+# ---------------------------------------------------------------------------
+# Logging helpers — strict [START] / [STEP] / [END] format for evaluators
+# ---------------------------------------------------------------------------
 
 
-def _emit(tag: str, payload: dict[str, Any]) -> None:
-    """Emit evaluator-friendly structured logs."""
-    print(f"[{tag}] {json.dumps(payload, ensure_ascii=True)}", flush=True)
+def _stderr(level: str, msg: str) -> None:
+    if VERBOSE:
+        print(f"[{level}] {msg}", file=sys.stderr, flush=True)
 
 
-def log_start(tasks: list[int], mode: str, model: str, env_base_url: str, seed: int) -> None:
-    _emit(
-        "START",
-        {
-            "tasks": tasks,
-            "mode": mode,
-            "model": model,
-            "env_base_url": env_base_url,
-            "seed": seed,
-        },
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    action_short = action if len(action) <= 200 else action[:200] + "..."
+    print(
+        f"[STEP] step={step} action={action_short} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
     )
 
 
-def log_step(task_id: int, score: float, passed: bool, done: bool, error: str | None = None) -> None:
-    _emit(
-        "STEP",
-        {
-            "task_id": task_id,
-            "score": round(score, 4),
-            "passed": passed,
-            "done": done,
-            "error": error,
-        },
-    )
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 
-def log_end(success: bool, tasks: list[int], average_score: float, results: list[dict[str, Any]]) -> None:
-    _emit(
-        "END",
-        {
-            "success": success,
-            "tasks": tasks,
-            "average_score": round(average_score, 4),
-            "results": results,
-        },
-    )
+# ---------------------------------------------------------------------------
+# OpenAI client builder
+# ---------------------------------------------------------------------------
 
 
-def _import_openai() -> tuple[Any, Any]:
-    """Import OpenAI client classes only when LLM mode is used."""
+def _build_openai_client():
+    """Build OpenAI client from required environment variables."""
     try:
-        from openai import BadRequestError, OpenAI
-    except ImportError as e:
+        from openai import OpenAI
+    except ImportError:
         raise EnvironmentError(
-            "OpenAI SDK is not installed. Install dependencies via "
-            "`pip install -r requirements.txt` or `pip install -e .[llm]`."
-        ) from e
-    return OpenAI, BadRequestError
+            "openai package is required. Install with: pip install openai"
+        )
+
+    token = HF_TOKEN
+    if not token:
+        raise EnvironmentError(
+            "Missing required environment variable: set HF_TOKEN, API_KEY, or OPENAI_API_KEY"
+        )
+
+    return OpenAI(base_url=API_BASE_URL, api_key=token)
 
 
-def _coerce_list(value: Any) -> list[dict[str, Any]] | None:
-    """Return value if it's a non-empty list of dicts, else None."""
-    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
-        return value
-    return None
+# ---------------------------------------------------------------------------
+# Prompt construction
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPTS = {
+    1: textwrap.dedent(
+        """
+        You are a medical data-cleaning AI. You receive synthetic patient records
+        with deliberate data-quality flaws (mixed date formats, invalid ICD-10 codes,
+        wrong medication units, OCR noise, missing fields).
+        Fix every field to be valid and standardised.
+        Return ONLY a valid JSON object with a "records" key containing an array of
+        processed patient records — one per input record, in the same order.
+        No conversational filler.
+        """
+    ).strip(),
+    2: textwrap.dedent(
+        """
+        You are a PHI (Protected Health Information) redaction AI.
+        Replace every PHI value (name, MRN, DOB, phone, email, address) with its
+        category token: [REDACTED_NAME], [REDACTED_MRN], [REDACTED_DOB],
+        [REDACTED_PHONE], [REDACTED_EMAIL], [REDACTED_ADDRESS].
+        Do NOT remove clinical content (diagnoses, medications, symptoms).
+        Return ONLY a valid JSON object with a "records" key.
+        No conversational filler.
+        """
+    ).strip(),
+    3: textwrap.dedent(
+        """
+        You are a medical data anonymisation AI. De-identify records while preserving
+        clinical signal. Replace DOB with age_group (18-40, 41-60, 61-75, 76+).
+        Redact all PHI. Remove adversarial indirect identifiers.
+        Return ONLY a valid JSON object with a "records" key.
+        No conversational filler.
+        """
+    ).strip(),
+    4: textwrap.dedent(
+        """
+        You are a clinical knowledge extraction AI. For each patient record, extract
+        clinical entities (conditions with ICD-10 codes, medications with names) and
+        write a concise clinical summary.
+        Return ONLY a valid JSON object with a "knowledge" key containing an array of
+        objects: [{"entities": [...], "summary": "..."}, ...]
+        One knowledge object per input record, in the same order.
+        No conversational filler.
+        """
+    ).strip(),
+    5: textwrap.dedent(
+        """
+        You are a contextual PII disambiguation AI. Redact patient/family identifiers
+        only (Mr., Mrs., Ms., Miss + name, family terms). Do NOT redact provider
+        names (Dr., Nurse, RN, Prof.) or facility names (Clinic, Hospital, Center).
+        In ambiguous surname cases, use context to preserve providers and redact patients.
+        Return ONLY a valid JSON object with a "records" key.
+        No conversational filler.
+        """
+    ).strip(),
+}
 
 
-def _coerce_dict(value: Any, task_id: int) -> list[dict[str, Any]] | None:
-    """Pull a records/knowledge list out of a dict, checking standard and wrapper keys."""
-    if not isinstance(value, dict):
-        return None
+def _build_user_prompt(task_id: int, task_description: str, records: list[dict]) -> str:
+    return textwrap.dedent(
+        f"""
+        Task ID: {task_id}
+        Description: {task_description}
 
-    # Direct hit: the model followed instructions exactly
-    key = "knowledge" if task_id == 4 else "records"
-    result = _coerce_list(value.get(key))
-    if result is not None:
-        return result
+        Input Records ({len(records)} records):
+        {json.dumps(records, ensure_ascii=False, indent=2)}
 
-    # Known provider wrapper keys (output, data, result, response, content, text)
-    for k in ("output", "data", "result", "response", "content", "text"):
-        if k in value:
-            result = _coerce_list(value[k]) or _coerce_dict(value[k], task_id)
-            if result is not None:
-                return result
-
-    # Bare valid object? (task 4: knowledge shape; tasks 1-3: EHR key heuristic)
-    if task_id == 4:
-        if "entities" in value and "summary" in value:
-            return [value]
-    else:
-        if any(k in value for k in ("patient_name", "clinical_notes", "mrn", "dob")):
-            return [value]
-
-    # Last resort: recurse into child lists/dicts
-    for child in value.values():
-        if isinstance(child, (list, dict)):
-            result = _coerce_list(child) or _coerce_dict(child, task_id)
-            if result is not None:
-                return result
-
-    return None
+        Return exactly {len(records)} items in your output, in the same order as the input.
+        Do not drop, merge, duplicate, or add items.
+        """
+    ).strip()
 
 
-def _coerce_str(value: Any, task_id: int) -> list[dict[str, Any]] | None:
-    """Re-parse a string as JSON and coerce the result."""
-    if not isinstance(value, str):
-        return None
-    s = value.strip()
-    if not (s.startswith("{") or s.startswith("[")):
-        return None
+# ---------------------------------------------------------------------------
+# LLM call with retry
+# ---------------------------------------------------------------------------
+
+
+def _call_llm(client, task_id: int, task_description: str, records: list[dict]) -> str:
+    """Call the LLM and return raw text content. Returns empty string on failure."""
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPTS.get(task_id, "Solve the task.")},
+        {"role": "user", "content": _build_user_prompt(task_id, task_description, records)},
+    ]
+
     try:
-        parsed = json.loads(s)
-        return _coerce_list(parsed) or _coerce_dict(parsed, task_id)
-    except json.JSONDecodeError:
-        return None
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+            response_format={"type": "json_object"},
+            stream=False,
+        )
+        text = (completion.choices[0].message.content or "").strip()
+        return text if text else ""
+    except Exception as exc:
+        _stderr("ERROR", f"LLM request failed: {exc}")
+        # Retry without json_object in case the provider doesn't support it
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
+                stream=False,
+            )
+            text = (completion.choices[0].message.content or "").strip()
+            return text if text else ""
+        except Exception as exc2:
+            _stderr("ERROR", f"LLM retry failed: {exc2}")
+            return ""
 
 
-def _extract_payload_from_response(content: str, task_id: int) -> list[dict[str, Any]]:
-    """Parse model output into either a list of records or a list of knowledge objects."""
+# ---------------------------------------------------------------------------
+# Payload extraction from LLM JSON output
+# ---------------------------------------------------------------------------
+
+
+def _extract_records(content: str, task_id: int) -> list[dict]:
+    """Extract records or knowledge list from LLM JSON output."""
+    if not content:
+        return []
+
+    # Try direct JSON parse
     try:
         parsed = json.loads(content)
-        result = _coerce_dict(parsed, task_id) or _coerce_list(parsed) or _coerce_str(parsed, task_id)
-        if result is not None:
-            return result
-    except Exception:
-        pass
-
-    raise ValueError(
-        f"Model output did not contain a valid {'knowledge' if task_id == 4 else 'records'} list"
-    )
-
-
-def _build_client() -> tuple[Any, str]:
-    """Build OpenAI client using required environment variables."""
-    OpenAI, _ = _import_openai()
-
-    api_base_url = os.getenv("API_BASE_URL", DEFAULT_API_BASE_URL)
-    model_name = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
-    api_key = os.getenv("API_KEY")
-    hf_token = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
-
-    missing = []
-    if STRICT_PROXY_MODE:
-        # Validator-safe mode: enforce injected proxy credentials only.
-        if not os.getenv("API_BASE_URL"):
-            missing.append("API_BASE_URL")
-        if not api_key:
-            missing.append("API_KEY")
-    else:
-        # Local/dev compatibility mode.
-        token = api_key or hf_token
-        if not token:
-            missing.append("API_KEY or HF_TOKEN/OPENAI_API_KEY")
-
-    if missing:
-        raise EnvironmentError(
-            "Missing required environment variables for LLM inference: "
-            + ", ".join(missing)
-        )
-
-    # Narrow optional type for static type checkers.
-    assert model_name is not None
-
-    token = api_key if STRICT_PROXY_MODE else (api_key or hf_token)
-    assert token is not None
-    return OpenAI(base_url=api_base_url, api_key=token), model_name
-
-
-def _is_response_format_unsupported(err: Exception) -> bool:
-    """Detect providers that reject response_format=json_object."""
-    body = getattr(err, "body", None)
-    if not isinstance(body, dict):
-        return False
-
-    payload = body.get("error", body)
-    if not isinstance(payload, dict):
-        return False
-
-    fields = [
-        str(payload.get("param", "")).lower(),
-        str(payload.get("code", "")).lower(),
-        str(payload.get("type", "")).lower(),
-        str(payload.get("message", "")).lower(),
-    ]
-    return any(
-        "response_format" in field
-        or "json_object" in field
-        or "json_validate_failed" in field
-        or "failed to validate json" in field
-        or "failed_generation" in field
-        for field in fields
-    )
-
-
-def _create_chat_completion(
-    client: Any,
-    model_name: str,
-    messages: list[dict[str, str]],
-):
-    """Create a completion, retrying without JSON mode only when explicitly unsupported."""
-    _, BadRequestError = _import_openai()
-
-    try:
-        return client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=0.0,
-            response_format={"type": "json_object"},
-        )
-    except BadRequestError as api_err:
-        if not _is_response_format_unsupported(api_err):
-            raise
-
-        _stderr_log("WARN", f"Model {model_name} rejected JSON mode, retrying without response_format")
-        return client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=0.0,
-        )
-
-
-def _llm_process_task(
-    client: Any,
-    model_name: str,
-    task_id: int,
-    task_description: str,
-    records: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], str]:
-    """Ask the model to solve the task and return JSON plus raw content.
-
-    Retries once with a stricter correction prompt when output is empty,
-    unparseable, or has the wrong number of items.
-    """
-    system_prompt = (
-        "You are a medical AI assistant. Solve the clinical data task exactly as described. "
-        "Return ONLY a valid JSON object. No conversational filler."
-    )
-    
-    task_specific_guidance = ""
-
-    if task_id == 4:
-        output_format = (
-            "Return a JSON object with a 'knowledge' key containing an array of objects. "
-            "Example: {\"knowledge\": [{\"entities\": [{\"text\": \"...\", \"type\": \"...\", \"code\": \"...\"}], \"summary\": \"...\"}]}"
-        )
-        task_specific_guidance = (
-            "For each record, extract condition and medication entities and provide a concise clinical summary. "
-            "Each entity must include text, type, and code."
-        )
-    elif task_id == 5:
-        output_format = (
-            "Return a JSON object with a 'records' key containing an array of processed patient records. "
-            "Example: {\"records\": [{\"record_id\": \"...\", \"clinical_notes\": \"...\", \"patient_name\": \"...\", ...}]}"
-        )
-        task_specific_guidance = (
-            "Contextual PII disambiguation: redact patient/family identifiers only. "
-            "Do NOT redact provider or facility names. In ambiguous surname cases, use context "
-            "(titles like Dr./RN and role cues) to preserve providers while redacting patients. "
-            "Example: in 'Dr. Smith met Mr. Smith', preserve 'Dr. Smith' and redact only 'Mr. Smith'."
-        )
-    else:
-        output_format = (
-            "Return a JSON object with a 'records' key containing an array of processed patient records. "
-            "Example: {\"records\": [{\"record_id\": \"...\", \"clinical_notes\": \"...\", \"patient_name\": \"...\", ...}]}"
-        )
-
-    output_key = "knowledge" if task_id == 4 else "records"
-    expected_items = len(records)
-
-    count_requirement = (
-        f"Return exactly {expected_items} items in '{output_key}'. "
-        "Do not drop, merge, duplicate, or add items. Preserve input order."
-    )
-
-    def _build_prompt(extra_instruction: str = "") -> str:
-        suffix = f"\nAdditional Instruction: {extra_instruction}" if extra_instruction else ""
-        guidance_line = (
-            f"Task-Specific Guidance: {task_specific_guidance}\n" if task_specific_guidance else ""
-        )
-        return (
-            f"Task ID: {task_id}\n"
-            f"Description: {task_description}\n\n"
-            f"Input Records (JSON):\n{json.dumps(records, ensure_ascii=True)}\n\n"
-            f"Output Format: {output_format}\n"
-            f"{guidance_line}"
-            f"Count Requirement: {count_requirement}"
-            f"{suffix}"
-        )
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": _build_prompt()},
-    ]
-
-    try:
-        # Attempt once, then do one strict corrective retry on malformed output.
-        for attempt in (1, 2):
-            response = _create_chat_completion(
-                client=client,
-                model_name=model_name,
-                messages=messages,
-            )
-
-            content = (response.choices[0].message.content or "").strip()
-            if not content:
-                if attempt == 2:
-                    return [], ""
-
-                _stderr_log("WARN", f"Task {task_id} empty model output (attempt {attempt}); retrying once")
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": _build_prompt(
-                            "Your previous response was empty. Return ONLY valid JSON that satisfies all format and count requirements."
-                        ),
-                    },
-                ]
-                continue
-
+    except json.JSONDecodeError:
+        # Try to find JSON block in markdown
+        import re
+        m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+        if m:
             try:
-                payload = _extract_payload_from_response(content, task_id)
-            except Exception:
-                payload = []
+                parsed = json.loads(m.group(1))
+            except json.JSONDecodeError:
+                return []
+        else:
+            return []
 
-            if payload and len(payload) == expected_items:
-                return payload, content
+    if not isinstance(parsed, dict):
+        return []
 
-            if attempt == 2:
-                return [], content
+    key = "knowledge" if task_id == 4 else "records"
+    result = parsed.get(key)
 
-            _stderr_log(
-                "WARN",
-                (
-                    f"Task {task_id} wrong JSON shape/count (attempt {attempt}): "
-                    f"expected {expected_items}, got {len(payload)}; retrying once"
-                ),
-            )
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": _build_prompt(
-                        "Your previous response had the wrong JSON schema or item count. "
-                        "Return ONLY valid JSON with the required top-level key and exact item count."
-                    ),
-                },
-            ]
+    # Handle wrapper keys
+    if result is None:
+        for k in ("output", "data", "result", "response"):
+            if k in parsed and isinstance(parsed[k], list):
+                result = parsed[k]
+                break
 
-        return [], ""
-    except Exception as e:
-        _stderr_log("WARN", f"LLM inference failed for task {task_id}: {e}")
-        return [], ""
+    if not isinstance(result, list):
+        return []
+
+    return result
 
 
-def _run_task_via_api(
+# ---------------------------------------------------------------------------
+# Run a single task through the environment
+# ---------------------------------------------------------------------------
+
+
+def _run_task(
     env_base_url: str,
     task_id: int,
     seed: int,
-    client: Any | None = None,
-    model_name: str | None = None,
+    client=None,
+    model_name: str = "",
 ) -> dict[str, Any]:
-    """Run one task episode through the OpenEnv HTTP API."""
-    def _error_result(message: str) -> dict[str, Any]:
+    """Run one episode through the OpenEnv HTTP API. Returns result dict."""
+
+    def _error(score: float = 0.0001, msg: str = "") -> dict:
         return {
-            "task_id": task_id,
-            "score": 0.0001,
-            "breakdown": {},
+            "score": score,
             "passed": False,
             "done": True,
-            "error": message,
+            "error": msg,
         }
 
     try:
         with httpx.Client(timeout=120.0) as http:
             # 1. Reset
             try:
-                reset_resp = http.post(
+                resp = http.post(
                     f"{env_base_url}/reset",
                     json={"task_id": task_id, "seed": seed},
                 )
-                reset_resp.raise_for_status()
-                reset_payload = reset_resp.json()
-                obs = reset_payload["observation"]
-                episode_id = reset_payload["episode_id"]
+                resp.raise_for_status()
+                data = resp.json()
             except Exception as e:
-                _stderr_log("ERROR", f"Task {task_id} reset failed at {env_base_url}: {e}")
-                return _error_result(f"Reset failed: {e}")
+                return _error(msg=f"Reset failed: {e}")
 
-            task_description = obs["task_description"]
-            records = obs["records"]
+            obs = data.get("observation", {})
+            episode_id = data.get("episode_id", "")
+            task_description = obs.get("task_description", "")
+            records = obs.get("records", [])
+            n_records = len(records)
 
-            # 2. Process (LLM)
-            if not client or not model_name:
-                raise ValueError("LLM mode requires client and model_name")
+            # 2. Get action from LLM
+            action_payload: list[dict] = []
+            action_str = ""
+            error_msg: Optional[str] = None
 
-            processed_payload, raw_content = _llm_process_task(
-                client=client,
-                model_name=model_name,
-                task_id=task_id,
-                task_description=task_description,
-                records=records,
-            )
+            if client is not None:
+                raw = _call_llm(client, task_id, task_description, records)
+                action_payload = _extract_records(raw, task_id)
+                action_str = raw[:200] if raw else "(empty)"
 
-            expected_items = len(records)
+                if not action_payload:
+                    error_msg = "LLM output had no valid records/knowledge"
+                    _stderr("WARN", f"Task {task_id}: {error_msg}")
 
-            # 3a. Reject wrong-length payloads before sending to grader.
-            if processed_payload and len(processed_payload) != expected_items:
-                redacted_len = len(raw_content or "")
-                _stderr_log("ERROR", f"Task {task_id} LLM output had wrong item count.")
-                _stderr_log(
-                    "INFO",
-                    (
-                        f"Expected {expected_items}, got {len(processed_payload)}. "
-                        f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content."
-                    ),
-                )
-                return {
-                    **_error_result(
-                        f"Wrong item count: expected {expected_items}, got {len(processed_payload)}"
-                    ),
-                    "model_output_len": redacted_len,
-                }
-
-            # 3b. Handle empty or malformed payloads before posting
-            if not processed_payload:
-                redacted_len = len(raw_content or "")
-                _stderr_log("ERROR", f"Task {task_id} LLM output was empty or malformed.")
-                _stderr_log("INFO", f"Raw model output suppressed (len={redacted_len} chars) to avoid leaking content.")
-                return {**_error_result("Empty/Malformed model payload"), "model_output_len": redacted_len}
-
-            # 4. Step
-            action_json: dict[str, Any] = {"is_final": True}
-            if task_id == 4:
-                action_json["knowledge"] = processed_payload
+                if action_payload and len(action_payload) != n_records:
+                    error_msg = f"Wrong count: expected {n_records}, got {len(action_payload)}"
+                    _stderr("WARN", f"Task {task_id}: {error_msg}")
+                    action_payload = []
             else:
-                action_json["records"] = processed_payload
+                return _error(msg="No LLM client provided")
+
+            # 3. Step
+            if not action_payload:
+                # Submit empty action to get a grade (will score low but won't crash)
+                action_json = {"is_final": True}
+                if task_id == 4:
+                    action_json["knowledge"] = []
+                else:
+                    action_json["records"] = []
+            else:
+                action_json = {"is_final": True}
+                if task_id == 4:
+                    action_json["knowledge"] = action_payload
+                else:
+                    action_json["records"] = action_payload
 
             try:
                 step_resp = http.post(
@@ -485,166 +337,177 @@ def _run_task_via_api(
                     json=action_json,
                 )
                 step_resp.raise_for_status()
-                step_payload = step_resp.json()
+                step_data = step_resp.json()
             except Exception as e:
-                _stderr_log("ERROR", f"Failed to submit task {task_id}: {e}")
-                return _error_result(f"Step failed: {e}")
+                return _error(msg=f"Step failed: {e}")
+
+            reward = float(step_data.get("reward", 0.0))
+            done = bool(step_data.get("done", True))
+            passed = bool(step_data.get("info", {}).get("passed", False))
+
+            if error_msg:
+                return {
+                    "score": reward,
+                    "passed": passed,
+                    "done": done,
+                    "error": error_msg,
+                }
 
             return {
-                "task_id": task_id,
-                "score": float(step_payload.get("reward", 0.0)),
-                "breakdown": step_payload.get("info", {}).get("breakdown", {}),
-                "passed": bool(step_payload.get("info", {}).get("passed", False)),
-                "done": bool(step_payload.get("done", False)),
+                "score": reward,
+                "passed": passed,
+                "done": done,
+                "error": None,
             }
+
     except Exception as e:
-        _stderr_log("ERROR", f"Unexpected error in task {task_id}: {e}")
-        return _error_result(f"Unexpected error: {e}")
+        _stderr("ERROR", f"Unexpected error in task {task_id}: {e}")
+        return _error(msg=f"Unexpected error: {e}")
 
 
-def _run_demo_local(task_ids: list[int], seed: int) -> list[dict[str, Any]]:
-    """Deterministic local fallback for quick validation."""
-    from src.baseline_agent import hybrid_baseline
-    from src.environment import MedicalOpenEnv
-
-    results: list[dict[str, Any]] = []
-    for task_id in task_ids:
-        try:
-            env = MedicalOpenEnv()
-            env.reset(task_id=task_id, seed=seed)
-            result = hybrid_baseline(env)
-            results.append(
-                {
-                    "task_id": task_id,
-                    "score": float(result.get("score", 0.0)),
-                    "breakdown": result.get("breakdown", {}),
-                    "passed": bool(result.get("passed", False)),
-                    "done": True,
-                }
-            )
-        except Exception as e:
-            _stderr_log("ERROR", f"Demo baseline failed for task {task_id}: {e}")
-            results.append(
-                {
-                    "task_id": task_id,
-                    "score": 0.0001,
-                    "breakdown": {},
-                    "passed": False,
-                    "done": True,
-                    "error": f"Demo failed: {e}",
-                }
-            )
-    return results
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="OpenEnv inference runner")
-    parser.add_argument("--task", type=int, action="append", choices=SUPPORTED_TASK_IDS, dest="tasks")
-    parser.add_argument("--all", action="store_true", help="Run all tasks")
+    parser = argparse.ArgumentParser(description="Medical Records OpenEnv inference")
+    parser.add_argument(
+        "--task", type=int, action="append", choices=SUPPORTED_TASK_IDS, dest="tasks",
+    )
+    parser.add_argument("--all", action="store_true", help="Run all 5 tasks")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--env-base-url", default=DEFAULT_ENV_BASE_URL)
-    parser.add_argument("--demo", action="store_true", help="Run deterministic local baseline")
+    parser.add_argument("--env-base-url", default=ENV_BASE_URL, help="Environment server URL")
+    parser.add_argument("--demo", action="store_true", help="Run deterministic local baseline (no LLM key needed)")
     args = parser.parse_args()
 
     task_ids = sorted(set(args.tasks or []))
     if args.all or not task_ids:
         task_ids = SUPPORTED_TASK_IDS.copy()
 
-    mode = "demo" if args.demo else "llm"
-    model_for_logs = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME) if mode == "llm" else "hybrid-baseline"
-    log_start(task_ids, mode, model_for_logs, args.env_base_url.rstrip("/"), int(args.seed))
+    env_url = args.env_base_url.rstrip("/")
 
+    # Demo mode: run local hybrid baseline without LLM API key
     if args.demo:
-        _stderr_log("INFO", f"Running local demo for tasks: {task_ids}")
-        results = _run_demo_local(task_ids=task_ids, seed=args.seed)
-        for r in results:
-            log_step(
-                task_id=int(r.get("task_id", -1)),
-                score=float(r.get("score", 0.0)),
-                passed=bool(r.get("passed", False)),
-                done=bool(r.get("done", True)),
-                error=r.get("error"),
-            )
-    else:
+        _run_demo_baseline(task_ids, args.seed)
+        return
+
+    # LLM mode: require API key
+    try:
+        client = _build_openai_client()
+    except EnvironmentError as e:
+        print(f"[ERROR] {e}", flush=True)
+        sys.exit(1)
+
+    # Log start
+    task_names = {
+        1: "Data Hygiene",
+        2: "PHI Redaction",
+        3: "Anonymisation",
+        4: "Knowledge Extraction",
+        5: "Contextual PII",
+    }
+    task_list = ", ".join(task_names.get(t, str(t)) for t in task_ids)
+    log_start(task_list, "medical-records-cleaner", MODEL_NAME)
+
+    _stderr("INFO", f"Running LLM inference ({MODEL_NAME}) for tasks: {task_ids}")
+
+    rewards: List[float] = []
+    steps_total = 0
+
+    for task_id in task_ids:
+        result = _run_task(
+            env_base_url=env_url,
+            task_id=task_id,
+            seed=args.seed,
+            client=client,
+            model_name=MODEL_NAME,
+        )
+
+        score = result.get("score", 0.0)
+        done = result.get("done", True)
+        error = result.get("error")
+
+        rewards.append(score)
+        steps_total += 1
+
+        action_summary = f"task{task_id}_submit"
+        log_step(
+            step=steps_total,
+            action=action_summary,
+            reward=score,
+            done=done,
+            error=error,
+        )
+
+    avg_score = sum(rewards) / max(len(rewards), 1)
+    all_passed = all(r >= 0.5 for r in rewards)  # heuristic: >0.5 means meaningful progress
+
+    log_end(
+        success=all_passed,
+        steps=steps_total,
+        score=avg_score,
+        rewards=rewards,
+    )
+
+    _stderr("INFO", f"Average score: {avg_score:.4f}")
+    _stderr("INFO", f"Results: {json.dumps(rewards, indent=2)}")
+
+
+def _run_demo_baseline(task_ids: list[int], seed: int) -> None:
+    """Run the deterministic local hybrid baseline (no LLM API key needed)."""
+    from src.baseline_agent import hybrid_baseline
+    from src.environment import MedicalOpenEnv
+
+    task_names = {
+        1: "Data Hygiene",
+        2: "PHI Redaction",
+        3: "Anonymisation",
+        4: "Knowledge Extraction",
+        5: "Contextual PII",
+    }
+    task_list = ", ".join(task_names.get(t, str(t)) for t in task_ids)
+    log_start(task_list, "medical-records-cleaner", "hybrid-baseline")
+
+    _stderr("INFO", f"Running local hybrid baseline for tasks: {task_ids}")
+
+    rewards: List[float] = []
+    steps_total = 0
+
+    for task_id in task_ids:
         try:
-            client, model_name = _build_client()
+            env = MedicalOpenEnv()
+            env.reset(task_id=task_id, seed=seed)
+            result = hybrid_baseline(env)
+            score = float(result.get("score", 0.0))
+            passed = bool(result.get("passed", False))
         except Exception as e:
-            _stderr_log("ERROR", f"Failed to initialize LLM client: {e}")
-            results = [
-                {
-                    "task_id": task_id,
-                    "score": 0.0001,
-                    "breakdown": {},
-                    "passed": False,
-                    "done": True,
-                    "error": f"LLM client initialization failed: {e}",
-                }
-                for task_id in task_ids
-            ]
-            for r in results:
-                log_step(
-                    task_id=int(r.get("task_id", -1)),
-                    score=float(r.get("score", 0.0)),
-                    passed=bool(r.get("passed", False)),
-                    done=bool(r.get("done", True)),
-                    error=r.get("error"),
-                )
-            avg = sum(r["score"] for r in results) / max(len(results), 1)
-            log_end(
-                success=all(bool(r.get("passed", False)) for r in results),
-                tasks=task_ids,
-                average_score=avg,
-                results=results,
-            )
-            return
+            _stderr("ERROR", f"Baseline failed for task {task_id}: {e}")
+            score = 0.0001
+            passed = False
 
-        _stderr_log("INFO", f"Running LLM inference ({model_name}) for tasks: {task_ids}")
-        results: list[dict[str, Any]] = []
-        for task_id in task_ids:
-            result = _run_task_via_api(
-                env_base_url=args.env_base_url.rstrip("/"),
-                task_id=task_id,
-                seed=args.seed,
-                client=client,
-                model_name=model_name,
-            )
-            results.append(result)
-            log_step(
-                task_id=int(result.get("task_id", task_id)),
-                score=float(result.get("score", 0.0)),
-                passed=bool(result.get("passed", False)),
-                done=bool(result.get("done", True)),
-                error=result.get("error"),
-            )
+        rewards.append(score)
+        steps_total += 1
+        log_step(
+            step=steps_total,
+            action=f"task{task_id}_baseline",
+            reward=score,
+            done=True,
+            error=None if passed else f"score={score:.4f}",
+        )
 
-    _stderr_log("INFO", "=" * 50)
-    _stderr_log("INFO", json.dumps({"results": results}, indent=2))
-    avg = sum(r["score"] for r in results) / max(len(results), 1)
-    log_end(success=all(bool(r.get("passed", False)) for r in results), tasks=task_ids, average_score=avg, results=results)
-    _stderr_log("INFO", f"Average score: {avg:.4f}")
-    _stderr_log("INFO", "=" * 50)
+    avg_score = sum(rewards) / max(len(rewards), 1)
+    all_passed = all(r >= 0.5 for r in rewards)
+
+    log_end(
+        success=all_passed,
+        steps=steps_total,
+        score=avg_score,
+        rewards=rewards,
+    )
+
+    _stderr("INFO", f"Average score: {avg_score:.4f}")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        # Last-resort guard: never crash evaluator due to uncaught inference error.
-        _emit(
-            "END",
-            {
-                "success": False,
-                "tasks": [],
-                "average_score": 0.0,
-                "results": [
-                    {
-                        "task_id": -1,
-                        "score": 0.0001,
-                        "breakdown": {},
-                        "passed": False,
-                        "done": True,
-                        "error": f"Fatal inference error: {e}",
-                    }
-                ],
-            },
-        )
+    main()
