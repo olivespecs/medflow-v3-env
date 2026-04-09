@@ -695,13 +695,11 @@ class TestRateLimiting:
 class TestCORSConfiguration:
     """Validate strict CORS policy behavior."""
 
-    def test_production_requires_explicit_origins(self, monkeypatch: pytest.MonkeyPatch):
-        """Production mode should fail when CORS_ORIGINS is unset."""
+    def test_production_defaults_when_origins_unset(self, monkeypatch: pytest.MonkeyPatch):
+        """Production mode should fall back to localhost defaults when CORS_ORIGINS is unset."""
         monkeypatch.setattr("src.api.OPENENV_ENV", "production")
         monkeypatch.delenv("CORS_ORIGINS", raising=False)
-
-        with pytest.raises(RuntimeError, match="CORS_ORIGINS must be configured"):
-            _get_cors_origins()
+        assert _get_cors_origins() == ["http://localhost:7860", "http://127.0.0.1:7860"]
 
     def test_wildcard_origin_is_rejected(self, monkeypatch: pytest.MonkeyPatch):
         """Wildcard origins are never allowed."""

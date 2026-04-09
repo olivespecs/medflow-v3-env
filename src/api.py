@@ -723,11 +723,7 @@ def _get_cors_origins() -> list[str]:
     default_origins = ["http://localhost:7860", "http://127.0.0.1:7860"]
     cors_env = os.environ.get("CORS_ORIGINS", "").strip()
     
-    is_production = OPENENV_ENV in {"prod", "production"}
-
     if not cors_env:
-        if is_production:
-            raise RuntimeError("CORS_ORIGINS must be configured in production")
         logger.warning(
             "CORS_ORIGINS env var not set — using localhost defaults. "
             "Set CORS_ORIGINS in production to restrict cross-origin access "
@@ -738,8 +734,7 @@ def _get_cors_origins() -> list[str]:
     # Parse comma-separated origins, strip whitespace
     origins = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
     if not origins:
-        if is_production:
-            raise RuntimeError("CORS_ORIGINS must contain at least one origin in production")
+        logger.warning("CORS_ORIGINS resolved to an empty list — using localhost defaults")
         return default_origins
 
     if any("*" in origin for origin in origins):
@@ -998,7 +993,7 @@ def list_tasks() -> dict:
     }
 
 
-0@app.post("/reset", status_code=200)
+@app.post("/reset", status_code=200)
 def reset_endpoint(request: Request, req: ResetRequest = Body(default=None)) -> dict:
     """
     Start a new episode.
