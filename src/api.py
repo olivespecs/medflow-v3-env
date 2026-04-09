@@ -1083,33 +1083,19 @@ def _validate_record_structure(record: dict, task_id: int) -> tuple[bool, str]:
     """
     Validate that a record has required fields for the task.
     Only validates critical fields that would cause grader crashes.
-    
+
     Returns:
         (is_valid, error_message)
     """
     # Only validate fields that are absolutely required to prevent crashes
     # Most fields are optional or have defaults in the grader
-    required_fields = {
-        1: ["record_id"],  # Task 1 needs record_id for alignment
-        2: ["record_id"],  # Task 2 needs record_id for alignment
-        3: ["record_id"],  # Task 3 needs record_id for alignment
-        4: [],  # Task 4 uses knowledge objects, not records
-        5: ["record_id", "clinical_notes"],
-    }
-    
-    fields = required_fields.get(task_id, [])
-    missing = [f for f in fields if f not in record]
-    
-    if missing:
-        return False, f"Missing required fields: {', '.join(missing)}"
-    
-    # Type validation for fields that would cause crashes if wrong type
+    # Relaxed validation: only check for crash-causing issues
     if task_id == 1:
         if "icd10_codes" in record and not isinstance(record.get("icd10_codes"), list):
             return False, "Field 'icd10_codes' must be a list"
         if "medications" in record and not isinstance(record.get("medications"), list):
             return False, "Field 'medications' must be a list"
-    
+
     if task_id in (2, 3):
         if "clinical_notes" in record and not isinstance(record.get("clinical_notes"), str):
             return False, "Field 'clinical_notes' must be a string"
@@ -1121,14 +1107,16 @@ def _validate_record_structure(record: dict, task_id: int) -> tuple[bool, str]:
             )
 
     if task_id == 5:
-        if not isinstance(record.get("clinical_notes"), str):
+        # Relaxed: allow records without clinical_notes (grader handles empty gracefully)
+        notes = record.get("clinical_notes", "")
+        if notes is not None and not isinstance(notes, str):
             return False, "Field 'clinical_notes' must be a string"
-        if len(record.get("clinical_notes", "")) > MAX_NOTES_LENGTH:
+        if isinstance(notes, str) and len(notes) > MAX_NOTES_LENGTH:
             return False, (
                 f"clinical_notes exceeds {MAX_NOTES_LENGTH} chars "
-                f"({len(record.get('clinical_notes', ''))} submitted). Truncate before submitting."
+                f"({len(notes)} submitted). Truncate before submitting."
             )
-    
+
     return True, ""
 
 
@@ -1169,8 +1157,12 @@ def _summarize_input(req: StepRequest, max_len: int = 200) -> str:
 
 
 def _validate_task_records_payload(req: StepRequest, task_id: int) -> None:
+    """Validate records payload. Relaxed: accepts empty records for validator compatibility."""
+    # Accept None/empty records — the grader will return a low score
     if req.records is None:
-        raise HTTPException(status_code=422, detail=f"Task {task_id} requires 'records' payload.")
+        # Coerce to empty list so step() doesn't crash
+        req.records = []
+        return
 
     for i, record in enumerate(req.records):
         valid, error_msg = _validate_record_structure(record, task_id)
@@ -1186,8 +1178,12 @@ def _validate_task_records_payload(req: StepRequest, task_id: int) -> None:
 
 
 def _validate_task_knowledge_payload(req: StepRequest, task_id: int) -> None:
+    """Validate knowledge payload. Relaxed: accepts empty knowledge for validator compatibility."""
+    # Accept None/empty knowledge — the grader will return a low score
     if req.knowledge is None:
-        raise HTTPException(status_code=422, detail="Task 4 requires 'knowledge' payload.")
+        # Coerce to empty list so step() doesn't crash
+        req.knowledge = []
+        return
 
     for i, knowledge_obj in enumerate(req.knowledge):
         valid, error_msg = _validate_knowledge_structure(knowledge_obj)
