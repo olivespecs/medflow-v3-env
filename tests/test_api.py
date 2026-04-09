@@ -337,16 +337,17 @@ class TestEndpointIntegration:
         assert response.status_code == 400
         assert "task_id" in response.json()["detail"].lower()
 
-    def test_task4_requires_knowledge_payload(self, client: TestClient, task4_episode_id: str):
-        """Task 4 requires 'knowledge' payload, not 'records'."""
+    def test_task4_rejects_records_payload(self, client: TestClient, task4_episode_id: str):
+        """Task 4 accepts empty records (relaxed validation) but returns low score."""
         action = {"records": [{"record_id": "test"}]}
         response = client.post(
             "/step",
             params={"episode_id": task4_episode_id},
             json=action
         )
-        assert response.status_code == 422
-        assert "knowledge" in response.json()["detail"].lower()
+        # Relaxed validation: returns 200 with low score instead of 422
+        assert response.status_code == 200
+        assert response.json()["reward"] < 0.01
 
     def test_task4_step_with_knowledge(self, client: TestClient, task4_episode_id: str):
         """Task 4 step works with knowledge payload."""
@@ -795,12 +796,13 @@ class TestErrorRecovery:
             assert "episode_id" in detail
             assert detail["episode_id"] == episode_id
 
-    def test_invalid_action_payload_422(self, client: TestClient, episode_id: str):
-        """Invalid action payloads return 422."""
-        # Task 1 requires 'records'
+    def test_empty_records_accepted(self, client: TestClient, episode_id: str):
+        """Empty/null records are accepted (relaxed validation) and return low score."""
         action = {"records": None}  # Explicitly null
         response = client.post("/step", params={"episode_id": episode_id}, json=action)
-        assert response.status_code == 422
+        # Relaxed validation: returns 200 with low score instead of 422
+        assert response.status_code == 200
+        assert response.json()["reward"] < 0.01
 
     def test_submitting_on_completed_episode(self, client: TestClient, episode_id: str):
         """Submitting actions on completed episodes returns error."""
@@ -826,16 +828,16 @@ class TestErrorRecovery:
         )
         assert response.status_code == 422
 
-    def test_missing_required_fields(self, client: TestClient, episode_id: str):
-        """Missing required fields in request body handled properly."""
-        # Empty body
+    def test_empty_body_accepted(self, client: TestClient, episode_id: str):
+        """Empty body returns 200 with low score (relaxed validation)."""
         response = client.post(
             "/step",
             params={"episode_id": episode_id},
             json={}
         )
-        # FastAPI will use defaults, but records=None means validation fails
-        assert response.status_code == 422
+        # Relaxed validation: returns 200 with low score instead of 422
+        assert response.status_code == 200
+        assert response.json()["reward"] < 0.01
 
     def test_episode_state_consistency_after_error(self, client: TestClient, episode_id: str):
         """Episode state remains consistent after grader error."""
