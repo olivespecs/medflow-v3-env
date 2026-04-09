@@ -150,6 +150,11 @@ class TestEndpointIntegration:
             assert "name" in task
             assert "difficulty" in task
             assert "description" in task
+            assert "grader" in task
+            assert isinstance(task["grader"], dict)
+            assert task["grader"].get("type") == "formula"
+            assert "expression" in task["grader"]
+            assert "pass_bar" in task["grader"]
             assert "grader_formula" in task
             assert "pass_bar" in task
             assert "max_steps" in task

@@ -886,6 +886,11 @@ def _build_task_catalog() -> list[dict[str, Any]]:
                 "standardise medication units, replace invalid ICD-10 codes, "
                 "and populate missing required fields."
             ),
+            "grader": {
+                "type": "formula",
+                "expression": "correct_fields / total_fields",
+                "pass_bar": "score >= 0.85",
+            },
             "grader_formula": "correct_fields / total_fields",
             "pass_bar": "score >= 0.85",
             "max_steps": 10,
@@ -900,6 +905,11 @@ def _build_task_catalog() -> list[dict[str, Any]]:
                 "tokens ([REDACTED_NAME], [REDACTED_MRN], ...) while preserving "
                 "all clinical content."
             ),
+            "grader": {
+                "type": "formula",
+                "expression": "phi_score * 0.6 + utility_score * 0.4",
+                "pass_bar": "phi_score == 1.0 AND utility_score >= 0.8",
+            },
             "grader_formula": "phi_score * 0.6 + utility_score * 0.4",
             "pass_bar": "phi_score == 1.0 AND utility_score >= 0.8",
             "max_steps": 10,
@@ -914,6 +924,11 @@ def _build_task_catalog() -> list[dict[str, Any]]:
                 "for a deterministic disease-risk model to remain accurate. "
                 "Use age-group buckets, preserve ICD-10 chapter prefixes, etc."
             ),
+            "grader": {
+                "type": "formula",
+                "expression": "(avg_phi * 0.4) + (avg_ml_utility * 0.3) + (avg_fid * 0.2) + (k_score * 0.1)",
+                "pass_bar": f"phi_score == 1.0 AND ml_utility_score >= {BASELINE_ML_SCORE}",
+            },
             "grader_formula": "(avg_phi * 0.4) + (avg_ml_utility * 0.3) + (avg_fid * 0.2) + (k_score * 0.1)",
             "pass_bar": f"phi_score == 1.0 AND ml_utility_score >= {BASELINE_ML_SCORE}",
             "max_steps": 10,
@@ -930,6 +945,14 @@ def _build_task_catalog() -> list[dict[str, Any]]:
                 "Submit one knowledge object per input record, in the same order as "
                 "observation.records (knowledge items have no record_id; alignment is by index)."
             ),
+            "grader": {
+                "type": "formula",
+                "expression": (
+                    "avg_entity_extraction * 0.4 + avg_code_precision * 0.3 + "
+                    "avg_summary_fidelity * 0.3"
+                ),
+                "pass_bar": "avg_entity_extraction >= 0.75 AND avg_summary_fidelity >= 0.50",
+            },
             "grader_formula": (
                 "avg_entity_extraction * 0.4 + avg_code_precision * 0.3 + "
                 "avg_summary_fidelity * 0.3"
@@ -946,6 +969,11 @@ def _build_task_catalog() -> list[dict[str, Any]]:
                 "Decide which mentions in clinical notes are patient identifiers vs. "
                 "providers/facilities/family. Redact only patient PII, keep providers."
             ),
+            "grader": {
+                "type": "formula",
+                "expression": "patient_phi_score * 0.5 + provider_phi_score * 0.3 + contextual_accuracy * 0.2",
+                "pass_bar": "overall_score >= 0.70 AND patient_phi_score >= 0.80",
+            },
             "grader_formula": "patient_phi_score * 0.5 + provider_phi_score * 0.3 + contextual_accuracy * 0.2",
             "pass_bar": "overall_score >= 0.70 AND patient_phi_score >= 0.80",
             "max_steps": 10,
