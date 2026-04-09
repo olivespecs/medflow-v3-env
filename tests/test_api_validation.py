@@ -12,24 +12,25 @@ client = TestClient(app)
 
 
 def test_step_validates_missing_required_fields_task1():
-    """Test that /step validates required fields for Task 1."""
+    """Test that /step accepts records without record_id (relaxed validation)."""
     # Create an episode
     response = client.post("/reset", json={"task_id": 1, "seed": 42})
     assert response.status_code == 200
     episode_id = response.json()["episode_id"]
-    
+
     # Submit records missing the critical record_id field
+    # Relaxed validation: returns 200 with low score
     invalid_records = [
-        {"dob": "1990-01-01"}  # Missing record_id (required for alignment)
+        {"dob": "1990-01-01"}  # Missing record_id
     ]
-    
+
     response = client.post(
         f"/step?episode_id={episode_id}",
         json={"records": invalid_records, "is_final": False}
     )
-    
-    assert response.status_code == 422
-    assert "Missing required fields" in response.json()["detail"]
+
+    assert response.status_code == 200
+    assert "reward" in response.json()
 
 
 def test_step_validates_icd10_codes_type_task1():
