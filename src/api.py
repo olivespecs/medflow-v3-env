@@ -1022,18 +1022,28 @@ def list_tasks() -> dict:
 
 
 @app.post("/reset", status_code=200)
-def reset_endpoint(request: Request, req: ResetRequest = Body(default=None)) -> dict:
+async def reset_endpoint(request: Request) -> dict:
     """
     Start a new episode.
 
     Returns an `episode_id` (UUID string) along with the first Observation.
     Pass this `episode_id` to all subsequent /step, /state, and /grader calls.
+
+    Accepts JSON body: {"task_id": 1-5, "seed": 42} (both fields optional).
+    Also accepts empty body {} for backwards compatibility.
     """
-    # Handle case where no body is provided (use defaults)
-    if req is None:
-        req = ResetRequest()
-    
-    return reset_episode(req, request)
+    # Parse body manually to handle Gradio middleware JSON mangling
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            body = {}
+    except Exception:
+        body = {}
+
+    task_id = body.get("task_id", 1)
+    seed = body.get("seed", 42)
+
+    return reset_episode(ResetRequest(task_id=task_id, seed=seed), request)
 
 
 def reset_episode(req: ResetRequest, request: Request) -> dict:
