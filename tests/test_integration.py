@@ -14,7 +14,6 @@ Run with:  pytest tests/test_integration.py -v
 from __future__ import annotations
 
 import pytest
-import httpx
 
 from src.api import (
     app,

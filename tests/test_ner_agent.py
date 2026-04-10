@@ -1,4 +1,3 @@
-import re
 
 from src.ner_agent import LocalNERAgent
 from src.record_processors import _redact_contextual_phi

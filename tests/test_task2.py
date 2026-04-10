@@ -96,7 +96,7 @@ def test_empty_notes_edge_case():
 
 def test_notes_with_no_phi():
     """Notes that have no PHI to begin with should score phi=1.0."""
-    from src.models import AnnotatedRecord, PHIToken, PHICategory
+    from src.models import AnnotatedRecord
     
     # Create minimal record with no PHI in notes
     record = AnnotatedRecord(
@@ -218,7 +218,6 @@ def test_utility_partial_when_some_keywords_retained():
 
 def test_pass_bar_boundary_phi_1_utility_exactly_08():
     """Pass bar requires phi_score==1.0 AND utility_score>=0.8."""
-    from src.models import AnnotatedRecord, PHIToken, PHICategory
     
     # Create a controlled record where we can achieve exact scores
     annotated = _make_annotated(n=2)

@@ -19,15 +19,12 @@ from .record_processors import (
     _anonymise_record as _anonymise_record_core,
     _extract_knowledge_rule_based as _extract_knowledge_core,
     _redact_contextual_phi as _redact_contextual_core,
-    REDACTION_MAP,
-    NOTES_PHI_FIELDS,
 )
 from .ner_agent import NER_CONFIDENCE_FINAL
 
 logger = logging.getLogger(__name__)
 
 SAFE_MODE = os.getenv("BASELINE_SAFE_MODE", "0").lower() in {"1", "true", "yes"}
-from .utils import normalize_date
 
 
 # ---------------------------------------------------------------------------

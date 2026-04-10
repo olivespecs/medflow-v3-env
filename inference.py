@@ -296,13 +296,11 @@ def _run_task(
 
             # 2. Get action from LLM
             action_payload: list[dict] = []
-            action_str = ""
             error_msg: Optional[str] = None
 
             if client is not None:
                 raw = _call_llm(client, task_id, task_description, records)
                 action_payload = _extract_records(raw, task_id)
-                action_str = raw[:200] if raw else "(empty)"
 
                 if not action_payload:
                     error_msg = "LLM output had no valid records/knowledge"

@@ -8,11 +8,6 @@ the internal API stabilizes again.
 from __future__ import annotations
 
 import json
-import pytest
-
-# Skip all inference tests since the module was rewritten
-pytestmark = pytest.mark.skip(reason="inference.py was rewritten to match hackathon spec; internal API changed")
-
 
 class _FakeMessage:
     def __init__(self, content: str):
@@ -29,41 +24,58 @@ class _FakeCompletion:
         self.choices = [_FakeChoice(content)]
 
 
+class _FakeOpenAIClient:
+    def __init__(self, content: str, capture: dict[str, object]):
+        self._content = content
+        self._capture = capture
+        self.chat = self._Chat(self)
+
+    class _Chat:
+        def __init__(self, parent: "_FakeOpenAIClient"):
+            self.completions = parent._Completions(parent)
+
+    class _Completions:
+        def __init__(self, parent: "_FakeOpenAIClient"):
+            self._parent = parent
+
+        def create(self, **kwargs):
+            self._parent._capture["messages"] = kwargs.get("messages", [])
+            return _FakeCompletion(self._parent._content)
+
+
 def test_llm_process_task_task5_includes_contextual_guidance(monkeypatch):
-    """Test that Task 5 prompt includes contextual PII guidance."""
+    """Task 5 system prompt includes contextual PII guidance and preserves provider context."""
     import inference
 
     captured: dict[str, object] = {}
 
-    def _fake_create(*, client, model_name, messages):
-        del client, model_name
-        captured["messages"] = messages
-        return _FakeCompletion(
-            json.dumps(
-                {
-                    "records": [
-                        {
-                            "record_id": "rec-1",
-                            "clinical_notes": "[REDACTED_NAME] was seen by Dr. Patel.",
-                        }
-                    ]
-                }
-            )
-        )
+    client = _FakeOpenAIClient(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "record_id": "rec-1",
+                        "clinical_notes": "[REDACTED_NAME] was seen by Dr. Patel.",
+                    }
+                ]
+            }
+        ),
+        captured,
+    )
 
-    monkeypatch.setattr(inference, "_create_chat_completion", _fake_create)
-
-    payload, _raw = inference._llm_process_task(
-        client=object(),
-        model_name="dummy-model",
+    raw = inference._call_llm(
+        client=client,
         task_id=5,
         task_description="Task 5 - Contextual PII Disambiguation",
         records=[{"record_id": "rec-1", "clinical_notes": "Dr. Patel saw Mr. Patel."}],
     )
 
-    prompt_text = str(captured["messages"][1]["content"]).lower()
-    assert "contextual pii disambiguation" in prompt_text
-    assert "do not redact provider" in prompt_text
+    payload = inference._extract_records(raw, task_id=5)
+
+    user_prompt = str(captured["messages"][1]["content"]).lower()
+    system_prompt = str(captured["messages"][0]["content"]).lower()
+    assert "contextual pii disambiguation" in user_prompt
+    assert "do not redact provider" in system_prompt
     assert len(payload) == 1
 
 
@@ -123,7 +135,7 @@ class _FakeHTTPClient:
 
 
 def test_run_task_via_api_task4_uses_llm_payload(monkeypatch):
-    """Test that Task 4 uses knowledge payload in step."""
+    """Task 4 submits knowledge payload through /step."""
     import inference
 
     capture: dict[str, object] = {}
@@ -132,23 +144,24 @@ def test_run_task_via_api_task4_uses_llm_payload(monkeypatch):
         del timeout
         return _FakeHTTPClient(capture)
 
-    def _fake_llm_process_task(*, client, model_name, task_id, task_description, records):
-        del client, model_name, task_description, records
+    def _fake_call_llm(client, task_id, task_description, records):
+        del client, task_description, records
         assert task_id == 4
-        return (
-            [
-                {
-                    "entities": [{"text": "I10", "type": "Condition", "code": "I10"}],
-                    "summary": "LLM_SUMMARY_SHOULD_BE_SENT",
-                }
-            ],
-            "{...}",
+        return json.dumps(
+            {
+                "knowledge": [
+                    {
+                        "entities": [{"text": "I10", "type": "Condition", "code": "I10"}],
+                        "summary": "LLM_SUMMARY_SHOULD_BE_SENT",
+                    }
+                ]
+            }
         )
 
     monkeypatch.setattr(inference.httpx, "Client", _fake_http_client_factory)
-    monkeypatch.setattr(inference, "_llm_process_task", _fake_llm_process_task)
+    monkeypatch.setattr(inference, "_call_llm", _fake_call_llm)
 
-    result = inference._run_task_via_api(
+    result = inference._run_task(
         env_base_url="http://fake-env",
         task_id=4,
         seed=42,
@@ -156,7 +169,8 @@ def test_run_task_via_api_task4_uses_llm_payload(monkeypatch):
         model_name="dummy-model",
     )
 
-    assert result["task_id"] == 4
+    assert result["done"] is True
+    assert result["score"] == 0.75
     step_action = capture["step_action"]
     assert isinstance(step_action, dict)
     assert step_action["knowledge"][0]["summary"] == "LLM_SUMMARY_SHOULD_BE_SENT"
@@ -176,7 +190,7 @@ class _FailingHTTPClient:
 
 
 def test_run_task_via_api_handles_reset_connection_failure(monkeypatch):
-    """Test graceful handling of reset connection failures."""
+    """Gracefully handle reset connection failures in _run_task."""
     import inference
 
     def _fake_http_client_factory(*, timeout):
@@ -185,7 +199,7 @@ def test_run_task_via_api_handles_reset_connection_failure(monkeypatch):
 
     monkeypatch.setattr(inference.httpx, "Client", _fake_http_client_factory)
 
-    result = inference._run_task_via_api(
+    result = inference._run_task(
         env_base_url="http://missing-env",
         task_id=1,
         seed=42,
@@ -193,7 +207,6 @@ def test_run_task_via_api_handles_reset_connection_failure(monkeypatch):
         model_name="dummy-model",
     )
 
-    assert result["task_id"] == 1
     assert result["done"] is True
     assert result["passed"] is False
     assert result["score"] > 0.0

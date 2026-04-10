@@ -182,7 +182,6 @@ def test_fidelity_lower_when_age_group_wrong():
         rec["age_group"] = "76+"  # Force incorrect age group
         rec.pop("dob", None)  # Remove DOB so age_group is used
     
-    correct_result = task3_anonymization.grade(correct_submit, annotated)
     wrong_result = task3_anonymization.grade(wrong_submit, annotated)
     
     # Fidelity should be affected by wrong age group

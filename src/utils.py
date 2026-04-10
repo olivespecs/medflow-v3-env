@@ -5,7 +5,6 @@ PHI regex patterns, and clinical keyword scanning.
 
 from __future__ import annotations
 
-import os
 import sys
 import logging
 import re

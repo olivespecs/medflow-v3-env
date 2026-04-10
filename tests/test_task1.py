@@ -97,7 +97,7 @@ def test_longitudinal_consistency_gender_flip():
     Scenario: Same MRN has gender "M" in Visit 1 and "F" in Visit 2.
     Agent must return majority value (or consistent value) across visits.
     """
-    from src.models import PatientRecord, Vitals
+    from src.models import PatientRecord
     
     # Create two records with same MRN but different genders
     base_dob = "1980-05-15"

@@ -667,13 +667,6 @@ PHI appears in **both structured fields and clinical notes** — embedded inform
 # ── Main UI builder ────────────────────────────────────────────────────────────
 
 def create_ui():
-    css = """
-    .gr-button-primary { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important; border: none !important; }
-    .gr-button-secondary { background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%) !important; border: none !important; color: white !important; }
-    .score-display { font-size: 2.5rem; font-weight: 700; text-align: center; }
-    .log-box { font-family: 'Courier New', monospace; font-size: 0.82rem; background: #0f172a; color: #94a3b8; border-radius: 8px; padding: 12px; }
-    """
-
     with gr.Blocks(
         title="Medical Records OpenEnv",
     ) as demo:

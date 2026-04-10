@@ -15,8 +15,6 @@ from .models import (
     DirtyRecord,
     Observation,
     PatientRecord,
-    PHICategory,
-    PHIToken,
     Reward,
     State,
 )

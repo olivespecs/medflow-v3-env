@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.tasks import task5_reasoning
-from src.models import AnnotatedRecord, PHICategory
+from src.models import PHICategory
 
 
 def _make_truth_records():

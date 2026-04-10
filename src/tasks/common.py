@@ -3,7 +3,7 @@
 Keep these lightweight and side-effect free to avoid grading regressions.
 """
 from __future__ import annotations
-from typing import Any, List
+from typing import Any
 
 
 def normalize_record_list(payload: Any) -> list[dict[str, Any]]:

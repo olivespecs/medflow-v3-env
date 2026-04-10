@@ -24,7 +24,7 @@ from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
@@ -108,6 +108,7 @@ class RuntimeStores:
 
 
 _runtime = RuntimeStores()
+REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "120"))
 
 
 # ---------------------------------------------------------------------------
@@ -118,11 +119,11 @@ class TimeoutMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce a timeout on all requests."""
     async def dispatch(self, request: Request, call_next):
         try:
-            return await asyncio.wait_for(call_next(request), timeout=30.0)
+            return await asyncio.wait_for(call_next(request), timeout=REQUEST_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             return JSONResponse(
                 status_code=504,
-                content={"detail": "Request timeout after 30 seconds"}
+                content={"detail": f"Request timeout after {REQUEST_TIMEOUT_SECONDS:g} seconds"}
             )
         except Exception as e:
             # Fallback for other dispatch errors
@@ -499,7 +500,6 @@ def _init_persistence() -> None:
             logger.info(f"SQLite persistence enabled: {db_path}")
             
             # Restore episodes from previous session
-            restored_count = 0
             # Note: We can't auto-restore without knowing episode_ids
             # Episodes are restored on-demand when accessed
         except Exception as e:
@@ -1554,7 +1554,6 @@ def detailed_health(request: Request) -> dict:
         pass
 
     try:
-        import evaluate
         health["bertscore_available"] = True
     except Exception:
         pass

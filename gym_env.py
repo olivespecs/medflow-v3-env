@@ -145,6 +145,7 @@ class MedicalRecordsGymEnv(gymnasium.Env):
         """Start a new episode. Returns (obs_text, info)."""
         if seed is not None:
             self._seed = seed
+        _ = options  # Required by Gymnasium reset signature.
 
         resp = self._http.post(
             f"{self.base_url}/reset",
@@ -266,6 +267,7 @@ class LocalMedicalRecordsGymEnv(gymnasium.Env):
         """Create a fresh environment and return the first observation."""
         if seed is not None:
             self._seed = seed
+        _ = options  # Required by Gymnasium reset signature.
 
         self._env = self._MedicalOpenEnv()
         obs = self._env.reset(task_id=self.task_id, seed=self._seed)
@@ -344,7 +346,6 @@ _register()
 
 if __name__ == "__main__":
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(description="Gym wrapper smoke test")
     parser.add_argument("--http", action="store_true", help="Use HTTP wrapper (requires server)")

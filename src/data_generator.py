@@ -21,7 +21,7 @@ from .models import (
     PatientRecord,
     Vitals,
 )
-from .utils import CLINICAL_KEYWORDS, INVALID_ICD10_EXAMPLES
+from .utils import INVALID_ICD10_EXAMPLES
 
 # ---------------------------------------------------------------------------
 # Clinical content templates (fully synthetic)
@@ -189,7 +189,7 @@ class EHRGenerator:
     def _make_icd_codes(self, n: int = 2) -> list[str]:
         return self._rng.sample(VALID_ICD10_POOL, k=min(n, len(VALID_ICD10_POOL)))
 
-    def _make_clinical_note(self, dob_str: str, diagnoses: list[str], meds: list[Medication]) -> str:
+    def _make_clinical_note(self, dob_str: str, meds: list[Medication]) -> str:
         template = self._rng.choice(CLINICAL_NOTE_TEMPLATES)
         diag_words = [self._rng.choice(DIAGNOSIS_POOL)] * 2
         syms = self._rng.sample(SYMPTOM_POOL, k=2)
@@ -224,7 +224,6 @@ class EHRGenerator:
         dob_str = dob_dt.strftime("%Y-%m-%d")
         meds = self._make_medications(n=self._rng.randint(1, 4))
         icd_codes = self._make_icd_codes(n=self._rng.randint(1, 3))
-        diag_words = [DIAGNOSIS_POOL[VALID_ICD10_POOL.index(c) % len(DIAGNOSIS_POOL)] for c in icd_codes]
         return PatientRecord(
             record_id=str(uuid.uuid4()),
             mrn=self._make_mrn(),
@@ -237,7 +236,7 @@ class EHRGenerator:
             icd10_codes=icd_codes,
             vitals=self._make_vitals(),
             medications=meds,
-            clinical_notes=self._make_clinical_note(dob_str, diag_words, meds),
+            clinical_notes=self._make_clinical_note(dob_str, meds),
         )
 
     # ------------------------------------------------------------------
@@ -373,7 +372,6 @@ class EHRGenerator:
                 # Create a clean record for this visit
                 meds = self._make_medications(n=self._rng.randint(1, 4))
                 icd_codes = self._make_icd_codes(n=self._rng.randint(1, 3))
-                diag_words = [DIAGNOSIS_POOL[VALID_ICD10_POOL.index(c) % len(DIAGNOSIS_POOL)] for c in icd_codes]
                 
                 clean = PatientRecord(
                     record_id=str(uuid.uuid4()),
@@ -387,7 +385,7 @@ class EHRGenerator:
                     icd10_codes=icd_codes,
                     vitals=self._make_vitals(),
                     medications=meds,
-                    clinical_notes=self._make_clinical_note(dob, diag_words, meds),
+                    clinical_notes=self._make_clinical_note(dob, meds),
                 )
                 
                 dirty_rec = DirtyRecord(**clean.model_dump(), injected_flaws=[])
@@ -578,8 +576,6 @@ class EHRGenerator:
 
             # 2. Email username hint in prose ("reach via <username>@...")
             if clean.email and "@" in clean.email:
-                email_user = clean.email.split("@")[0]
-                email_hint = f"email {email_user}@"
                 email_hint_full = clean.email  # full email in freetext
                 tokens.append(PHIToken(
                     category=PHICategory.EMAIL,

@@ -10,7 +10,6 @@ score simply by copying the notes verbatim.
 from __future__ import annotations
 
 from typing import Any
-import re
 from ..models import PatientRecord
 from ..utils import scan_phi, semantic_similarity_score
 from .common import normalize_record_list, validate_length_or_error

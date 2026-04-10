@@ -172,7 +172,7 @@ class TestSQLitePersistence:
     
     def test_serialization_preserves_all_fields(self, store: SQLiteEpisodeStore):
         """Test that all environment fields are preserved."""
-        from src.models import DirtyRecord, PatientRecord, Vitals
+        from src.models import DirtyRecord, PatientRecord
         
         env = MedicalOpenEnv()
         env.reset(task_id=1, seed=42)
@@ -247,6 +247,7 @@ class TestGlobalStore:
         # Old reference should be invalid
         new_store = get_store(temp_db)
         # Should be different instance after reset
+        assert new_store is not store
 
 
 if __name__ == "__main__":

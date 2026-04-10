@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      BASELINE_SAFE_MODE: "1"
 
     steps:
       - name: Checkout repository
@@ -39,7 +38,9 @@ jobs:
         run: python -m pip install uv
 
       - name: Generate uv.lock (CI)
-        run: python -m uv lock
+        run: |
+          rm -f uv.lock
+          python -m uv lock
 
       - name: Validate OpenEnv specification
         run: python -m pipx run --spec openenv-core openenv validate .

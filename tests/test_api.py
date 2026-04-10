@@ -17,7 +17,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from starlette.testclient import TestClient
@@ -596,24 +596,22 @@ class TestRateLimiting:
 
     def test_different_ips_independent_limits(self):
         """Different IPs have independent rate limits."""
-        # Use patched client IPs via mock
-        with patch("src.api.Request") as MockRequest:
-            # We'll test the rate limiter directly instead
-            from src.api import _check_rate_limit, _rate_limit_store
-            
-            # Clear rate limit store
-            with _rate_limit_lock:
-                _rate_limit_store.clear()
-            
-            # IP1 makes requests
-            for _ in range(RATE_LIMIT_REQUESTS):
-                assert _check_rate_limit("192.168.1.1") is True
-            assert _check_rate_limit("192.168.1.1") is False  # Now limited
-            
-            # IP2 should still be able to make requests
-            for _ in range(RATE_LIMIT_REQUESTS):
-                assert _check_rate_limit("192.168.1.2") is True
-            assert _check_rate_limit("192.168.1.2") is False  # Now limited
+        # We'll test the rate limiter directly instead
+        from src.api import _check_rate_limit, _rate_limit_store
+
+        # Clear rate limit store
+        with _rate_limit_lock:
+            _rate_limit_store.clear()
+
+        # IP1 makes requests
+        for _ in range(RATE_LIMIT_REQUESTS):
+            assert _check_rate_limit("192.168.1.1") is True
+        assert _check_rate_limit("192.168.1.1") is False  # Now limited
+
+        # IP2 should still be able to make requests
+        for _ in range(RATE_LIMIT_REQUESTS):
+            assert _check_rate_limit("192.168.1.2") is True
+        assert _check_rate_limit("192.168.1.2") is False  # Now limited
 
     def test_rate_limit_window_expiry(self):
         """Rate limit resets after window expires."""
@@ -841,10 +839,6 @@ class TestErrorRecovery:
 
     def test_episode_state_consistency_after_error(self, client: TestClient, episode_id: str):
         """Episode state remains consistent after grader error."""
-        # Get initial state
-        initial_state = client.get("/state", params={"episode_id": episode_id}).json()
-        initial_step = initial_state["step"]
-        
         # Force a grader error
         with patch("src.environment.task1_hygiene.grade") as mock_grade:
             mock_grade.side_effect = Exception("Simulated failure")
