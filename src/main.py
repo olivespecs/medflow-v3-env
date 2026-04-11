@@ -11,12 +11,10 @@ except ImportError:
 import os
 import logging
 from contextlib import asynccontextmanager
-import gradio as gr
 import uvicorn
 from fastapi import FastAPI
 
 from .api import app as fastapi_app
-from .ui import create_ui
 from .mcp_server import mcp
 
 logger = logging.getLogger(__name__)
@@ -72,12 +70,25 @@ async def app_lifespan(app: FastAPI):
     logger.info("Shutting down gracefully")
 
 
-# Mount Gradio and MCP at import time so Gradio startup hooks (queue workers)
-# initialize correctly before handling requests.
+# Mount API and MCP at import time. Gradio UI is optional to keep container
+# startup/build light for validator environments.
 app = fastapi_app
 original_router_lifespan = app.router.lifespan_context
-gradio_ui = create_ui()
-gr.mount_gradio_app(app, gradio_ui, path="/")
+
+ENABLE_GRADIO_UI = os.getenv("ENABLE_GRADIO_UI", "0") == "1"
+if ENABLE_GRADIO_UI:
+    try:
+        import gradio as gr
+        from .ui import create_ui
+
+        gradio_ui = create_ui()
+        gr.mount_gradio_app(app, gradio_ui, path="/")
+        logger.info("Gradio UI mounted at /")
+    except Exception as e:
+        logger.warning("Could not mount Gradio UI: %s", e)
+else:
+    logger.info("Gradio UI disabled (set ENABLE_GRADIO_UI=1 to enable)")
+
 try:
     app.mount("/mcp", mcp.http_app())
 except Exception as e:

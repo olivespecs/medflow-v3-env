@@ -12,9 +12,6 @@ openenv>=0.1.0
 # HTTP client (used by inference/gym wrappers)
 httpx>=0.27.0
 
-# UI
-gradio>=4.0.0
-
 # Data processing
 pandas>=2.0.0
 numpy>=1.26.0
@@ -28,16 +25,5 @@ python-dotenv>=1.0.0
 # LLM client (required by hackathon inference.py)
 openai>=1.14.0
 
-# ML stack (NER, semantic similarity, BERTScore)
-torch>=2.2.0
-transformers>=4.38.0
-evaluate>=0.4.0
-bert-score>=0.3.13
-sentence-transformers>=2.7.0
-
 # Gymnasium wrapper (RL framework compatibility)
 gymnasium>=0.26.0
-
-# Development / testing
-pytest>=8.0.0
-hypothesis>=6.100.0

@@ -1,0 +1,27 @@
+# Keep Docker build context minimal for faster builds in CI/WSL
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.pytest_cache
+.mypy_cache
+.hypothesis
+.coverage
+htmlcov
+
+# Local/temporary artifacts
+tmp_ci_logs
+.cache
+
+# Dev and validation assets not needed at runtime
+tests
+scripts
+openenv.yaml
+README.md
+inference.py
+gym_env.py
