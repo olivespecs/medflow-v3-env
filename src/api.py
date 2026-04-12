@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware

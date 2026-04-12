@@ -194,7 +194,7 @@ class MedicalOpenEnv:
             records=observation_records,
             step=self._step,
             max_steps=MAX_STEPS,
-            metadata={"seed": seed, "n_records": n_records, "generator_id": self._generator_id},
+            metadata={"seed": seed, "n_records": len(observation_records), "generator_id": self._generator_id},
         )
 
         logger.info(
@@ -302,15 +302,13 @@ class MedicalOpenEnv:
         )
 
         # Build next observation (same records — agent may re-submit)
-        if self._task_id == 1:
+        if self._task_id in (1, 4):
             obs_records = [r.model_dump() for r in self._dirty_records]
-        elif self._task_id == 4:
-            obs_records = [r.model_dump() for r in self._clean_truth]
         else:
             obs_records = [
                 {k: v for k, v in r.model_dump().items() if k not in _HIDDEN_FIELDS}
                 for r in self._annotated_records
-            ]  # clinical_keywords hidden: grader-internal only
+            ]  # phi_tokens/clinical_keywords hidden: grader-internal only
 
         # [P3] Add actionable feedback hints to metadata
         metadata = {

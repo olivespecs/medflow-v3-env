@@ -27,3 +27,10 @@ openai>=1.14.0
 
 # Gymnasium wrapper (RL framework compatibility)
 gymnasium>=0.26.0
+
+# ML / NLP dependencies (NER, BERTScore, semantic similarity)
+transformers>=4.38.0
+torch>=2.1.0
+spacy>=3.7.0
+bert-score>=0.3.13
+scikit-learn>=1.4.0

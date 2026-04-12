@@ -1,6 +1,6 @@
 """
-Utility helpers: ICD-10 validation, date normalisation, unit conversion,
-PHI regex patterns, and clinical keyword scanning.
+Utility helpers: ICD-10 validation, date normalisation,
+PHI regex patterns, clinical keyword scanning, and semantic similarity.
 """
 
 from __future__ import annotations
@@ -115,47 +115,6 @@ def normalize_date(raw: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Unit Conversion
-# ---------------------------------------------------------------------------
-
-# Dosage normalisation: everything → mg
-_UNIT_TO_MG: dict[str, float] = {
-    "mg": 1.0,
-    "mcg": 0.001,
-    "µg": 0.001,
-    "ug": 0.001,
-    "g": 1000.0,
-    "gram": 1000.0,
-    "grams": 1000.0,
-}
-
-_DOSE_RE = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(mg|mcg|µg|ug|g|gram|grams)", re.IGNORECASE
-)
-
-
-def normalize_dose_to_mg(dose_str: str | float | int | None) -> float | None:
-    """Extract numeric dose in mg from a free-text dose string; tolerate None/non-strings."""
-    if dose_str is None:
-        return None
-    text = str(dose_str)
-    m = _DOSE_RE.search(text)
-    if not m:
-        return None
-    value, unit = float(m.group(1)), m.group(2).lower()
-    return value * _UNIT_TO_MG.get(unit, 1.0)
-
-
-# Weight normalisation
-def lbs_to_kg(lbs: float) -> float:
-    return float(round(lbs * 0.453592, 2))
-
-
-def kg_to_lbs(kg: float) -> float:
-    return float(round(kg / 0.453592, 2))
-
-
-# ---------------------------------------------------------------------------
 # PHI Regex Patterns
 # ---------------------------------------------------------------------------
 
@@ -203,15 +162,6 @@ def scan_phi(text: str) -> dict[str, list[str]]:
     return results
 
 
-def redact_phi_in_text(text: str, phi_tokens: list) -> str:
-    """
-    Replace all known PHI values in *text* with their redaction tokens.
-    *phi_tokens* is a list of PHIToken objects.
-    """
-    for token in phi_tokens:
-        if token.value in text:
-            text = text.replace(token.value, token.redaction_token)
-    return text
 
 
 # ---------------------------------------------------------------------------
