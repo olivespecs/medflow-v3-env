@@ -5,17 +5,20 @@ WORKDIR /app
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install system dependencies + uv
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Copy and install Python dependencies first (better Docker layer caching)
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --retries 10 --timeout 120 -r requirements.txt
 
-# Copy application code
+# Copy application code and generate uv.lock
 COPY . .
+RUN uv lock
 
 # Expose the port HF Spaces expects
 EXPOSE 7860
