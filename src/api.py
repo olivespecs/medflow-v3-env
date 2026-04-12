@@ -874,9 +874,18 @@ def _jsonrpc_error(rpc_id: Any, code: int, message: str) -> dict[str, Any]:
     }
 
 
+# Cache for task catalog and contract to ensure instant response
+_TASK_CATALOG_CACHE: list[dict[str, Any]] | None = None
+_CONTRACT_CACHE: dict[str, Any] | None = None
+
+
 def _build_task_catalog() -> list[dict[str, Any]]:
     """Single source of truth for task metadata exposed by API endpoints."""
-    return [
+    global _TASK_CATALOG_CACHE
+    if _TASK_CATALOG_CACHE is not None:
+        return _TASK_CATALOG_CACHE
+
+    catalog = [
         {
             "id": 1,
             "name": "Data Hygiene & Standardisation",
@@ -980,6 +989,8 @@ def _build_task_catalog() -> list[dict[str, Any]]:
             "action_payload_key": "records",
         },
     ]
+    _TASK_CATALOG_CACHE = catalog
+    return catalog
 
 
 @app.post("/mcp", tags=["open_env"])
