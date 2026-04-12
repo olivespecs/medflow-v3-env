@@ -1420,38 +1420,8 @@ def run_baseline(request: Request) -> dict:
 
 
 @app.get("/contract", tags=["open_env"])
-def get_contract(request: Request) -> dict:
+async def get_contract() -> dict:
     """OpenEnv-style environment contract for clients and evaluators."""
-    _enforce_read_rate_limit(request, "/contract")
-
-    from .models import Observation, Reward, State
-
-    reset_schema = (
-        ResetRequest.model_json_schema()
-        if hasattr(ResetRequest, "model_json_schema")
-        else ResetRequest.schema()
-    )
-    step_schema = (
-        StepRequest.model_json_schema()
-        if hasattr(StepRequest, "model_json_schema")
-        else StepRequest.schema()
-    )
-    obs_schema = (
-        Observation.model_json_schema()
-        if hasattr(Observation, "model_json_schema")
-        else Observation.schema()
-    )
-    reward_schema = (
-        Reward.model_json_schema()
-        if hasattr(Reward, "model_json_schema")
-        else Reward.schema()
-    )
-    state_schema = (
-        State.model_json_schema()
-        if hasattr(State, "model_json_schema")
-        else State.schema()
-    )
-
     return {
         "name": "Medical Records Data Cleaner & PII Redactor",
         "version": app.version,
@@ -1470,7 +1440,6 @@ def get_contract(request: Request) -> dict:
             "export": "GET /export?episode_id=<uuid>",
             "metrics": "GET /metrics",
             "health": "GET /health",
-            "health_detailed": "GET /health/detailed",
             "schema": "GET /schema",
             "metadata": "GET /metadata",
             "mode": "GET /mode",
@@ -1486,13 +1455,8 @@ def get_contract(request: Request) -> dict:
         },
         "tasks": _build_task_catalog(),
         "schemas": {
-            "reset_request": reset_schema,
-            "step_request": step_schema,
+            "reset_request": {"task_id": {"type": "integer", "default": 1}, "seed": {"type": "integer", "default": 42}},
             "action": _ACTION_SCHEMA,
-            "observation": obs_schema,
-            "reward": reward_schema,
-            "state": state_schema,
-            "error": ERROR_SCHEMA,
         },
         "examples": {
             "reset_request": {"task_id": 2, "seed": 42},
